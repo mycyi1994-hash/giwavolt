@@ -1,19 +1,21 @@
 import type { DeathSession, DeathTile, Mode, Difficulty } from "./types";
-import { generateBombMask } from "./deathPatterns";
+import { generateShapeMask } from "./deathShapes";
 
-// Death Fun — a mines-style game with a 7% house edge. Reveal safe tiles to
-// raise your leverage; hit a skull and you bust. Cash out any time with STOP.
-// Payout is fair odds minus the edge, so surviving climbs the multiplier and
-// denser boards (higher difficulty) climb faster.
+// Death Fun — a mines-style game. The board is a random SHAPE (disc, heart,
+// diamond, star, …) carved out of a dim×dim grid; skulls are placed RANDOMLY
+// among the in-shape tiles. Reveal safe tiles to raise your leverage; hit a
+// skull and you bust. STOP cashes out. Payout is fair odds minus the house
+// edge, so surviving climbs the multiplier.
 
-export const DEATH_EDGE = 0.07; // 7% house edge
+export const DEATH_EDGE = 0.07; // baked into payouts (not shown in UI)
 
-// difficulty → board dimension (N×N) and skull density
-export const DIFFICULTIES: Record<Difficulty, { label: string; dim: number; density: number }> = {
-  low: { label: "LOW", dim: 3, density: 0.18 },
-  medium: { label: "MEDIUM", dim: 6, density: 0.22 },
-  high: { label: "HIGH", dim: 13, density: 0.27 },
-  ultra: { label: "ULTRA", dim: 25, density: 0.32 },
+// difficulty → board dimension and skull density. Density is tuned so the
+// average single-tap safe chance is ≈ 45 / 38 / 28 / 16 %.
+export const DIFFICULTIES: Record<Difficulty, { label: string; dim: number; density: number; safePct: number }> = {
+  low: { label: "NORMAL", dim: 3, density: 0.55, safePct: 45 },
+  medium: { label: "MEDIUM", dim: 6, density: 0.62, safePct: 38 },
+  high: { label: "HARD", dim: 13, density: 0.72, safePct: 28 },
+  ultra: { label: "ULTRA", dim: 25, density: 0.84, safePct: 16 },
 };
 
 export const DIFFICULTY_ORDER: Difficulty[] = ["low", "medium", "high", "ultra"];
@@ -24,34 +26,41 @@ export function multiplierAfter(picks: number, bombs: number, total: number): nu
   const safe = total - bombs;
   let pSurvive = 1;
   for (let i = 0; i < picks; i++) pSurvive *= (safe - i) / (total - i);
+  if (pSurvive <= 0) return 0;
   return (1 - DEATH_EDGE) / pSurvive;
 }
 
-// per-pick survival chance at the start of a board (first reveal)
 export function firstPickWinPct(bombs: number, total: number): number {
-  return ((total - bombs) / total) * 100;
+  return total > 0 ? ((total - bombs) / total) * 100 : 0;
+}
+
+function sample(pool: number[], n: number): number[] {
+  const a = pool.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a.slice(0, n);
 }
 
 export function newBoard(mode: Mode, difficulty: Difficulty = "medium"): DeathSession {
   const cfg = DIFFICULTIES[difficulty];
   const dim = cfg.dim;
-  const total = dim * dim;
+  const mask = generateShapeMask(dim);
+  const inPlay: number[] = [];
+  mask.forEach((on, i) => on && inPlay.push(i));
+  const total = inPlay.length;
   const bombs = Math.max(1, Math.min(total - 1, Math.round(cfg.density * total)));
-  return {
-    mode,
-    difficulty,
-    dim,
-    stake: 0,
-    bombs,
-    bombsIdx: generateBombMask(dim, bombs),
-    tiles: Array<DeathTile>(total).fill("hidden"),
-    picks: 0,
-    multiplier: 1,
-    status: "idle",
-    cashout: 0,
-  };
+  const bombsIdx = sample(inPlay, bombs);
+
+  const tiles: DeathTile[] = mask.map((on) => (on ? "hidden" : "void"));
+  return { mode, difficulty, dim, stake: 0, bombs, bombsIdx, tiles, picks: 0, multiplier: 1, status: "idle", cashout: 0 };
+}
+
+export function totalTiles(s: DeathSession): number {
+  return s.tiles.reduce((n, t) => (t === "void" ? n : n + 1), 0);
 }
 
 export function revealAll(s: DeathSession): DeathTile[] {
-  return s.tiles.map((t, i) => (s.bombsIdx.includes(i) ? "skull" : t === "hidden" ? "safe" : t));
+  return s.tiles.map((t, i) => (t === "void" ? "void" : s.bombsIdx.includes(i) ? "skull" : t === "hidden" ? "safe" : t));
 }

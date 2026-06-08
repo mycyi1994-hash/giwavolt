@@ -125,7 +125,7 @@ export default function TapTradingPage() {
       <div className="flex h-full flex-col md:flex-row">
         <TapPanel price={price} bid={bid} onBid={setBid} />
 
-        <main className="relative min-w-0 flex-1">
+        <main className="relative min-w-0 flex-1 bg-[#070710]">
           <div className={`panel clip absolute left-4 top-3 z-10 px-3 py-1.5 font-mono text-[11px] tracking-wider ${real ? "text-magenta" : "text-cyan"}`}>
             {real ? "◆ REAL — on-chain ETH" : "◆ DEMO — play money"}
           </div>

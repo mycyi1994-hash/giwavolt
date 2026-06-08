@@ -4,7 +4,7 @@ import { Providers } from "./providers";
 
 export const metadata: Metadata = {
   title: "VOLT ⚡ tap-trading on GIWA",
-  description: "Full on-chain tap-trading game on Giwa Sepolia. Tap the grid — the live price line decides. 7% house edge, provably on-chain.",
+  description: "Full on-chain tap-trading game on Giwa Sepolia. Tap the grid — the live price line decides.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

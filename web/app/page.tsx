@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
-import { Zap, Rocket, Terminal } from "lucide-react";
+import { Zap, Terminal } from "lucide-react";
 import DiceHand from "@/components/landing/DiceHand";
 import SoundToggle from "@/components/play/SoundToggle";
 import { useWalletGate } from "@/lib/walletGate";
@@ -49,21 +49,14 @@ export default function Landing() {
 
             <div className="mt-7 flex flex-wrap gap-3">
               <button
-                onClick={go("/swap")}
-                className="btn-neon clip flex items-center gap-2 bg-cyan/10 px-6 py-3 font-display text-sm font-bold tracking-wide text-cyan"
-              >
-                <Rocket size={17} /> LAUNCH APP
-              </button>
-              <button
                 onClick={go("/terminal/tap")}
-                className="clip flex items-center gap-2 border border-magenta/60 bg-magenta/10 px-6 py-3 font-display text-sm font-bold tracking-wide text-magenta transition hover:bg-magenta/20"
-                style={{ boxShadow: "0 0 14px rgba(255,43,214,.25)" }}
+                className="btn-neon clip flex items-center gap-2 bg-cyan/10 px-7 py-3.5 font-display text-base font-bold tracking-wide text-cyan"
               >
-                <Terminal size={17} /> LAUNCH TERMINAL
+                <Terminal size={18} /> LAUNCH TERMINAL
               </button>
             </div>
             <p className="mt-3 font-mono text-[11px] text-faint">
-              Connect a wallet to enter · Launch App → swap · Launch Terminal → games
+              Connect a wallet to enter · Tap Trading · Death Fun · Leaderboard
             </p>
           </div>
 

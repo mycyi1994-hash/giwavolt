@@ -313,17 +313,6 @@ export default function GameChart({
       const firstBand = bandForPrice(range.min) - 1;
       const lastBand = bandForPrice(range.max) + 1;
 
-      // background ladder lines
-      ctx.lineWidth = 1;
-      ctx.strokeStyle = "rgba(0,229,255,0.05)";
-      for (let b = firstBand; b <= lastBand; b++) {
-        const y = yForPrice(bandLow(b));
-        ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(W, y);
-        ctx.stroke();
-      }
-
       const hover = mouse.inside ? cellAt(mouse.x, mouse.y, now) : null;
 
       // ---- multiplier grid ----
@@ -365,53 +354,76 @@ export default function GameChart({
 
       // ---- locked zone (< MIN_BET_HORIZON s) ----
       if (lockX > nowX) {
-        const pulse = 0.5 + 0.5 * Math.sin(now / 320);
-        const ph = (now / 28) % 16; // moving stripes
+        const pulse = 0.5 + 0.5 * Math.sin(now / 300);
+        const ph = (now / 24) % 18; // moving stripes
+        const top = plotTop;
+        const bot = plotBot();
+        const m = 7; // safe margin inset (left/right + top/bottom)
+        const zx0 = nowX + m;
+        const zx1 = lockX - m;
+        const cx = (nowX + lockX) / 2;
+
+        // soft gradient fill inside the band
+        const grad = ctx.createLinearGradient(0, top, 0, bot);
+        grad.addColorStop(0, "rgba(255,43,214,0.05)");
+        grad.addColorStop(0.5, "rgba(12,6,20,0.66)");
+        grad.addColorStop(1, "rgba(255,43,214,0.05)");
         ctx.save();
         ctx.beginPath();
-        ctx.rect(nowX, plotTop, lockX - nowX, plotBot() - plotTop);
+        ctx.rect(zx0, top, zx1 - zx0, bot - top);
         ctx.clip();
-        ctx.fillStyle = "rgba(8,6,16,0.62)";
-        ctx.fillRect(nowX, plotTop, lockX - nowX, plotBot() - plotTop);
-        ctx.strokeStyle = `rgba(255,43,214,${(0.1 + pulse * 0.12).toFixed(3)})`;
-        ctx.lineWidth = 2;
-        for (let x = nowX - 60 + ph; x < lockX + 60; x += 16) {
+        ctx.fillStyle = grad;
+        ctx.fillRect(zx0, top, zx1 - zx0, bot - top);
+        // animated diagonal sheen stripes
+        ctx.strokeStyle = `rgba(0,229,255,${(0.05 + pulse * 0.08).toFixed(3)})`;
+        ctx.lineWidth = 3;
+        for (let x = zx0 - 80 + ph; x < zx1 + 80; x += 18) {
           ctx.beginPath();
-          ctx.moveTo(x, plotTop);
-          ctx.lineTo(x + 60, plotBot());
+          ctx.moveTo(x, top);
+          ctx.lineTo(x + 80, bot);
           ctx.stroke();
         }
         ctx.restore();
 
-        // boundary line — pulsing neon
-        ctx.strokeStyle = `rgba(255,43,214,${(0.6 + pulse * 0.4).toFixed(3)})`;
+        // inset neon frame (the "safe margin" framing)
+        ctx.strokeStyle = `rgba(255,43,214,${(0.55 + pulse * 0.4).toFixed(3)})`;
         ctx.shadowColor = "rgba(255,43,214,0.9)";
-        ctx.shadowBlur = 8 + pulse * 14;
+        ctx.shadowBlur = 10 + pulse * 16;
         ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(lockX, plotTop);
-        ctx.lineTo(lockX, plotBot());
+        roundRect(ctx, zx0, top + m, zx1 - zx0, bot - top - 2 * m, 8);
         ctx.stroke();
         ctx.shadowBlur = 0;
 
-        // vertical "LOCKED" — one letter per line, centred, glowing
-        const cx = (nowX + lockX) / 2;
+        // both edges get a bright neon rail
+        ctx.strokeStyle = `rgba(0,229,255,${(0.4 + pulse * 0.4).toFixed(3)})`;
+        ctx.shadowColor = "rgba(0,229,255,0.8)";
+        ctx.shadowBlur = 8 + pulse * 10;
+        ctx.lineWidth = 2;
+        for (const ex of [zx0, zx1]) {
+          ctx.beginPath();
+          ctx.moveTo(ex, top + m);
+          ctx.lineTo(ex, bot - m);
+          ctx.stroke();
+        }
+        ctx.shadowBlur = 0;
+
+        // big vertical "LOCKED" — one bold letter per line, glowing
         const letters = "LOCKED".split("");
-        const lh = Math.min(26, (plotBot() - plotTop) / 8);
-        const startY = (plotTop + plotBot()) / 2 - ((letters.length - 1) * lh) / 2;
+        const lh = Math.min(40, (bot - top - 4 * m) / letters.length);
+        const startY = (top + bot) / 2 - ((letters.length - 1) * lh) / 2;
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        ctx.font = `900 ${Math.round(lh * 0.78)}px var(--font-display, sans-serif)`;
-        ctx.shadowColor = "rgba(255,43,214,0.95)";
+        ctx.font = `900 ${Math.round(lh * 0.82)}px var(--font-display, sans-serif)`;
+        ctx.shadowColor = "rgba(255,43,214,1)";
         letters.forEach((ch, i) => {
-          ctx.shadowBlur = 10 + pulse * 10;
-          ctx.fillStyle = `rgba(255,${Math.round(120 + pulse * 80)},230,1)`;
+          ctx.shadowBlur = 14 + pulse * 14;
+          ctx.fillStyle = `rgba(255,${Math.round(110 + pulse * 90)},235,1)`;
           ctx.fillText(ch, cx, startY + i * lh);
         });
         ctx.shadowBlur = 0;
-        ctx.font = "700 9px var(--font-mono, monospace)";
-        ctx.fillStyle = "rgba(255,43,214,0.7)";
-        ctx.fillText("< 10s", cx, startY + letters.length * lh);
+        ctx.font = "700 11px var(--font-mono, monospace)";
+        ctx.fillStyle = "rgba(0,229,255,0.85)";
+        ctx.fillText("< 10s", cx, startY + letters.length * lh - lh * 0.1);
       }
 
       // ---- active bet markers ----

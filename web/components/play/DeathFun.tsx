@@ -7,7 +7,7 @@ import ModeToggle from "./ModeToggle";
 import AnimatedNumber from "@/components/ui/AnimatedNumber";
 import { useToast } from "@/components/ui/Toast";
 import { sfx } from "@/lib/sound";
-import { newBoard, multiplierAfter, revealAll, DIFFICULTIES, DIFFICULTY_ORDER, firstPickWinPct } from "@/lib/death";
+import { newBoard, multiplierAfter, revealAll, DIFFICULTIES, DIFFICULTY_ORDER, firstPickWinPct, totalTiles } from "@/lib/death";
 import type { Difficulty } from "@/lib/types";
 import { usdc, krw } from "@/lib/money";
 
@@ -49,7 +49,7 @@ export default function DeathFun() {
   }
 
   const playing = death.status === "playing";
-  const total = death.dim * death.dim;
+  const total = totalTiles(death);
   const value = +(death.stake * death.multiplier).toFixed(2);
   const nextMult = multiplierAfter(death.picks + 1, death.bombs, total);
   const winPct = firstPickWinPct(death.bombs, total);
@@ -64,7 +64,15 @@ export default function DeathFun() {
     if (stake <= 0 || balance[mode] < stake) return;
     sfx.place();
     adjust(mode, -stake);
-    setDeath({ ...death, stake, tiles: death.tiles.map(() => "hidden"), picks: 0, multiplier: 1, status: "playing", cashout: 0 });
+    setDeath({
+      ...death,
+      stake,
+      tiles: death.tiles.map((t) => (t === "void" ? "void" : "hidden")), // keep the board shape
+      picks: 0,
+      multiplier: 1,
+      status: "playing",
+      cashout: 0,
+    });
   };
   const reveal = (i: number) => {
     if (!playing || death.tiles[i] !== "hidden") return;
@@ -219,7 +227,7 @@ export default function DeathFun() {
             <span className="text-magenta">›</span> {death.bombs} skulls / {total} tiles · first-tap safe{" "}
             <span className="text-lime">{winPct.toFixed(1)}%</span>
           </p>
-          <p className="text-faint">7% house edge · STOP locks your win · tabs wait while you play.</p>
+          <p className="text-faint">STOP locks your win · switch tabs anytime, it waits.</p>
         </div>
       </aside>
 
@@ -280,6 +288,7 @@ function Tile({
   const base = "grid place-items-center clip border transition";
   const rev = animate ? "animate-reveal" : "";
   const icon = size >= 26;
+  if (t === "void") return <div style={{ width: size, height: size }} aria-hidden />;
   if (t === "skull")
     return (
       <div className={`${base} ${rev} border-magenta bg-magenta/15 text-magenta`} style={{ width: size, height: size, boxShadow: "0 0 10px rgba(255,43,214,.4)" }}>

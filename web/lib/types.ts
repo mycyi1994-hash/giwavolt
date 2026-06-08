@@ -4,7 +4,7 @@ export type Difficulty = "low" | "medium" | "high" | "ultra";
 
 // A Death Fun session is kept in shared state so it survives tab switches
 // (the game stays "pending" while you're on another tab).
-export type DeathTile = "hidden" | "safe" | "skull";
+export type DeathTile = "hidden" | "safe" | "skull" | "void";
 
 export type DeathStatus = "idle" | "playing" | "stopped" | "busted";
 

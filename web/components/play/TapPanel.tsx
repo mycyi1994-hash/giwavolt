@@ -120,7 +120,7 @@ export default function TapPanel({ price, bid, onBid }: { price: number; bid: nu
               <span className="text-magenta">{STAKE_ETH} ETH</span> on-chain — settles instantly.
             </p>
             <p className="text-faint">
-              {isVoltTapConfigured() ? "VoltTap on Giwa Sepolia · 7% edge." : "⚠ Real not deployed — set NEXT_PUBLIC_VOLTTAP_ADDRESS."}
+              {isVoltTapConfigured() ? "VoltTap on Giwa Sepolia · instant settle." : "⚠ Real not deployed — set NEXT_PUBLIC_VOLTTAP_ADDRESS."}
             </p>
           </>
         ) : (
@@ -129,7 +129,7 @@ export default function TapPanel({ price, bid, onBid }: { price: number; bid: nu
               <span className="text-cyan">›</span> Tap a cell ≥ <span className="text-magenta">10s</span> out. Win{" "}
               <span className="text-lime">stake × multiplier</span>; tap again to cancel.
             </p>
-            <p className="text-faint">Demo uses play money — no real funds. · 7% edge.</p>
+            <p className="text-faint">Demo uses play money — no real funds.</p>
           </>
         )}
       </div>
