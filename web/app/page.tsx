@@ -9,8 +9,6 @@ import BottomBar from "@/components/BottomBar";
 import GameChart from "@/components/GameChart";
 import { money } from "@/lib/format";
 
-const DEMO_ADDRESS = "0x93a8c4e2f1b6d0a9c7e5b3f1a2d4c6e8b0a25515a5";
-
 export default function Page() {
   const [balance, setBalance] = useState(100);
   const [bid, setBid] = useState(0.9);
@@ -35,11 +33,10 @@ export default function Page() {
 
   return (
     <div className="flex h-screen flex-col">
-      <Header address={DEMO_ADDRESS} />
+      <Header />
       <div className="flex min-h-0 flex-1">
         <LeftRail />
         <SidePanel
-          address={DEMO_ADDRESS}
           balance={balance}
           price={price}
           bid={bid}

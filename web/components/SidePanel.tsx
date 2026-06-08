@@ -1,13 +1,13 @@
 "use client";
 
 import { ChevronDown, LineChart, Trophy, Wallet } from "lucide-react";
+import { useAccount } from "wagmi";
 import { money, price as fmtPrice, shortAddr } from "@/lib/format";
 
 const BIDS = [0.3, 0.9, 3, 9];
 const HYPE_USD = 30; // 1 HYPE ≈ $30 (demo)
 
 export default function SidePanel({
-  address,
   balance,
   price,
   bid,
@@ -15,7 +15,6 @@ export default function SidePanel({
   onAddFunds,
   onWithdraw,
 }: {
-  address: string;
   balance: number;
   price: number;
   bid: number;
@@ -23,6 +22,7 @@ export default function SidePanel({
   onAddFunds: () => void;
   onWithdraw: () => void;
 }) {
+  const { address, isConnected } = useAccount();
   return (
     <aside className="flex w-[260px] shrink-0 flex-col gap-4 border-r border-line bg-panel/40 p-4">
       {/* asset selector */}
@@ -53,7 +53,10 @@ export default function SidePanel({
       {/* wallet */}
       <div>
         <div className="text-[11px] font-semibold uppercase tracking-wide text-text-faint">Wallet</div>
-        <div className="tabular mt-0.5 text-sm text-text-muted">{shortAddr(address)}</div>
+        <div className="tabular mt-0.5 flex items-center gap-1.5 text-sm text-text-muted">
+          <span className={`h-1.5 w-1.5 rounded-full ${isConnected ? "bg-accent" : "bg-text-faint"}`} />
+          {isConnected && address ? shortAddr(address) : "Not connected"}
+        </div>
       </div>
 
       {/* game balance */}

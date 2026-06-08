@@ -1,11 +1,11 @@
 "use client";
 
-import { Search, Download, ChevronDown } from "lucide-react";
-import { shortAddr } from "@/lib/format";
+import { Search, Download } from "lucide-react";
+import { ConnectButton } from "@rainbow-me/rainbowkit";
 
 const TABS = ["Trade", "Discover", "Predict", "Tap Trading", "Referrals", "More"];
 
-export default function Header({ address }: { address: string }) {
+export default function Header() {
   return (
     <header className="flex h-14 shrink-0 items-center gap-6 border-b border-line bg-panel/70 px-4 backdrop-blur">
       <div className="flex items-center gap-2">
@@ -43,14 +43,10 @@ export default function Header({ address }: { address: string }) {
           <span>Search by token…</span>
           <kbd className="rounded border border-line px-1 text-[10px]">/</kbd>
         </div>
-        <button className="flex items-center gap-1.5 rounded-md border border-line bg-panel-2 px-3 py-1.5 text-[13px] font-medium hover:border-line-strong">
+        <button className="hidden items-center gap-1.5 rounded-md border border-line bg-panel-2 px-3 py-1.5 text-[13px] font-medium hover:border-line-strong sm:flex">
           <Download size={14} /> Deposit
         </button>
-        <button className="flex items-center gap-2 rounded-md border border-line bg-panel-2 py-1.5 pl-2.5 pr-2 text-[13px] hover:border-line-strong">
-          <span className="h-5 w-5 rounded-full bg-gradient-to-br from-accent to-[#7c5cff]" />
-          <span className="tabular text-text-muted">{shortAddr(address)}</span>
-          <ChevronDown size={14} className="text-text-faint" />
-        </button>
+        <ConnectButton accountStatus="address" chainStatus="icon" showBalance={false} />
       </div>
     </header>
   );
