@@ -34,20 +34,6 @@ export default function DeathFun() {
 
   if (!death) return null;
 
-  if (mode === "real") {
-    return (
-      <div className="grid h-full place-items-center p-6">
-        <div className="panel clip flex max-w-md flex-col items-center gap-3 px-8 py-7 text-center">
-          <Skull size={28} className="text-magenta" />
-          <div className="font-display text-lg font-bold tracking-wide text-magenta neon-magenta">REAL — COMING SOON</div>
-          <p className="font-sans text-[13px] text-muted">
-            On-chain Death Fun (real ETH) is in the works. Switch to <span className="text-cyan">DEMO</span> to play now.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   const playing = death.status === "playing";
   const total = totalTiles(death);
   const value = +(death.stake * death.multiplier).toFixed(2);

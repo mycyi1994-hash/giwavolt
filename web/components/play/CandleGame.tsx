@@ -18,12 +18,14 @@ const TFS = [
 type Bet = { dir: "up" | "down"; stake: number; open: number };
 
 export default function CandleGame() {
-  const { balance, adjust } = usePlay();
+  const { mode, balance, adjust } = usePlay();
   const toast = useToast();
   const [stake, setStake] = useState(5);
   const [, force] = useState(0);
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
 
   // mutable game state kept in refs; we re-render on a tick
   const price = useRef(63250);
@@ -66,7 +68,7 @@ export default function CandleGame() {
             const up = price.current >= bt.open;
             const win = up === (bt.dir === "up");
             if (win) {
-              adjust("demo", bt.stake * PAYOUT);
+              adjust(modeRef.current, bt.stake * PAYOUT);
               sfx.win();
               toast.push("win", `BTC ${tf.label} ${bt.dir.toUpperCase()} ✓ +${usdc(bt.stake * PAYOUT)}`, "candle closed");
             } else {
@@ -88,9 +90,9 @@ export default function CandleGame() {
 
   const place = (sec: number, dir: "up" | "down") => {
     if (bet.current[sec]) return;
-    if (stake <= 0 || balance.demo < stake) return;
+    if (stake <= 0 || balance[modeRef.current] < stake) return;
     sfx.place();
-    adjust("demo", -stake);
+    adjust(modeRef.current, -stake);
     bet.current[sec] = { dir, stake, open: open.current[sec] };
     force((t) => t + 1);
   };
@@ -109,7 +111,7 @@ export default function CandleGame() {
         </div>
         <div>
           <div className="mb-1 font-mono text-[10px] tracking-[0.2em] text-faint">PLAY BALANCE</div>
-          <div className="tabular text-[26px] font-black leading-none text-cyan neon-cyan">{usdc(balance.demo)}</div>
+          <div className="tabular text-[26px] font-black leading-none text-cyan neon-cyan">{usdc(balance[mode])}</div>
         </div>
         <div>
           <div className="mb-2 font-mono text-[10px] tracking-[0.2em] text-faint">STAKE (USDC)</div>

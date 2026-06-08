@@ -3,10 +3,11 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
-import { Zap, Home, LineChart, Skull, Trophy, User, TrendingUp, CandlestickChart } from "lucide-react";
+import { Zap, Home, LineChart, Skull, Trophy, User, TrendingUp, CandlestickChart, Wallet } from "lucide-react";
 import ModeToggle from "@/components/play/ModeToggle";
 import SoundToggle from "@/components/play/SoundToggle";
 import AnimatedNumber from "@/components/ui/AnimatedNumber";
+import { useDeposit } from "@/components/account/DepositModal";
 import { useFunds } from "@/lib/useFunds";
 
 const TABS = [
@@ -20,6 +21,7 @@ const TABS = [
 export default function TopNav() {
   const pathname = usePathname();
   const funds = useFunds();
+  const deposit = useDeposit();
 
   return (
     <header className="relative z-30 flex h-14 shrink-0 items-center gap-3 border-b border-line bg-ink/70 px-4 backdrop-blur">
@@ -71,23 +73,22 @@ export default function TopNav() {
         })}
       </nav>
 
-      {/* right cluster: fund · mode · wallet · profile */}
+      {/* right cluster: fund · deposit · mode · wallet · profile */}
       <div className="ml-auto flex items-center gap-2.5">
-        <div className="hidden flex-col items-end leading-none md:flex">
-          <AnimatedNumber
-            value={funds.amount}
-            format={(n) => (funds.symbol === "ETH" ? `${n.toFixed(4)} ETH` : `${n.toLocaleString("en-US", { maximumFractionDigits: 2 })} USDC`)}
-            className="tabular text-[13px] font-bold text-cyan"
-          />
-          <span className="tabular text-[10px] text-faint">{funds.fmtSub}</span>
-        </div>
+        <button onClick={deposit.open} className="hidden flex-col items-end leading-none md:flex" title="Deposit / Withdraw">
+          <AnimatedNumber value={funds.amount} format={(n) => `${n.toLocaleString("en-US", { maximumFractionDigits: 2 })} USDC`} className="tabular text-[13px] font-bold text-cyan" />
+          <span className="tabular text-[10px] text-faint">{funds.label}</span>
+        </button>
+        <button
+          onClick={deposit.open}
+          className="btn-neon clip flex items-center gap-1.5 bg-cyan/10 px-3 py-1.5 font-display text-[12px] font-bold tracking-wide text-cyan"
+        >
+          <Wallet size={14} /> DEPOSIT
+        </button>
         <ModeToggle />
         <SoundToggle />
         <ConnectButton accountStatus="address" chainStatus="none" showBalance={false} />
-        <Link
-          href="/terminal/profile"
-          className="grid h-9 w-9 place-items-center border border-line bg-ink-2 text-muted clip transition hover:border-cyan/50 hover:text-cyan"
-        >
+        <Link href="/terminal/profile" className="grid h-9 w-9 place-items-center border border-line bg-ink-2 text-muted clip transition hover:border-cyan/50 hover:text-cyan">
           <User size={16} />
         </Link>
       </div>
