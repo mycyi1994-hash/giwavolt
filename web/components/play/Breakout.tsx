@@ -11,12 +11,13 @@ import { useLivePrice } from "@/lib/useLivePrice";
 import { sfx } from "@/lib/sound";
 import { usdc } from "@/lib/money";
 
-const PAYOUT = 1.92;
+const HOUSE_EDGE = 0.05; // baked into the payout (not displayed)
+const PAYOUT = +(2 * (1 - HOUSE_EDGE)).toFixed(2); // symmetric barriers ⇒ ~50/50 → 1.90×
 const PRESETS = [1, 5, 10, 25];
 const DIST = [
-  { label: "TIGHT", pct: 0.0003 },
-  { label: "MID", pct: 0.0006 },
-  { label: "WIDE", pct: 0.0012 },
+  { label: "0.25%", pct: 0.0025 },
+  { label: "0.5%", pct: 0.005 },
+  { label: "1%", pct: 0.01 },
 ];
 
 type Bet = { dir: "up" | "down"; stake: number; entry: number; up: number; down: number };
@@ -128,37 +129,37 @@ export default function Breakout() {
         </div>
       </aside>
 
-      <main className="relative grid min-w-0 flex-1 place-items-center overflow-hidden p-6">
-        <LiveFeed className="absolute bottom-3 left-3 top-3 z-20 hidden w-56 overflow-hidden lg:block" />
+      <main className="relative min-w-0 flex-1 overflow-hidden bg-[#070710]">
+        {/* full-bleed race track */}
+        <Track hist={histRef.current} bet={b} price={price.current} flashing={flashing} win={status.current === "win"} />
 
-        <div className="flex w-full max-w-3xl flex-col items-center gap-4">
-          {/* header */}
-          <div className="flex w-full items-center justify-between">
-            <span className="flex items-center gap-1.5 border border-lime/50 bg-lime/10 px-2.5 py-1 font-mono text-[10px] tracking-wider text-lime clip">
-              <span className="h-1.5 w-1.5 rounded-full bg-lime animate-flicker" /> LIVE · BINANCE BTC/USD
-            </span>
-            <span className="tabular font-display text-3xl font-black text-txt neon-cyan">${price.current.toLocaleString("en-US", { maximumFractionDigits: 0 })}</span>
-          </div>
+        <LiveFeed className="absolute bottom-24 left-3 top-3 z-20 hidden w-56 overflow-hidden lg:block" />
 
-          {/* race track */}
-          <Track hist={histRef.current} bet={b} price={price.current} flashing={flashing} win={status.current === "win"} />
+        {/* header overlay */}
+        <div className="pointer-events-none absolute inset-x-0 top-3 z-20 flex items-center justify-between px-4">
+          <span className="flex items-center gap-1.5 border border-lime/50 bg-ink/70 px-2.5 py-1 font-mono text-[10px] tracking-wider text-lime clip backdrop-blur">
+            <span className="h-1.5 w-1.5 rounded-full bg-lime animate-flicker" /> LIVE · BINANCE BTC/USD
+          </span>
+          <span className="tabular font-display text-3xl font-black text-txt neon-cyan">${price.current.toLocaleString("en-US", { maximumFractionDigits: 0 })}</span>
+        </div>
 
-          {/* actions */}
+        {/* controls overlay */}
+        <div className="absolute inset-x-0 bottom-4 z-20 flex flex-col items-center gap-2 px-4">
           {live ? (
-            <div className="clip flex w-full items-center justify-center gap-2 border border-cyan/50 bg-cyan/10 py-3 font-display text-sm font-black tracking-widest text-cyan animate-glow">
-              <Radio size={16} /> LIVE — {b?.dir.toUpperCase()} · first touch wins
+            <div className="panel clip flex items-center justify-center gap-2 border border-cyan/50 bg-cyan/10 px-6 py-3 font-display text-sm font-black tracking-widest text-cyan animate-glow">
+              <Radio size={16} /> LIVE — {b?.dir.toUpperCase()} · first touch wins · {PAYOUT}×
             </div>
           ) : flashing ? (
-            <div className={`clip w-full border py-3 text-center font-display text-base font-black tracking-widest ${status.current === "win" ? "border-lime text-lime" : "border-magenta text-magenta"}`}>
+            <div className={`panel clip border px-6 py-3 text-center font-display text-base font-black tracking-widest ${status.current === "win" ? "border-lime text-lime" : "border-magenta text-magenta"}`}>
               {status.current === "win" ? `WON +${usdc((b?.stake ?? 0) * PAYOUT)}` : "MISSED"}
             </div>
           ) : (
             <div className="flex items-center justify-center gap-10">
-              <RoundBtn dir="up" onClick={() => place("up")} stake={stake} />
-              <RoundBtn dir="down" onClick={() => place("down")} stake={stake} />
+              <RoundBtn dir="up" onClick={() => place("up")} stake={stake} payout={PAYOUT} />
+              <RoundBtn dir="down" onClick={() => place("down")} stake={stake} payout={PAYOUT} />
             </div>
           )}
-          <p className="font-mono text-[10px] tracking-wider text-faint">Outcome = real Binance price touching a barrier. The house can't move the market.</p>
+          <p className="pointer-events-none font-mono text-[10px] tracking-wider text-faint">Real Binance price · house can’t move the market · barrier ±{(DIST[distI].pct * 100).toFixed(2)}%</p>
         </div>
       </main>
     </div>
@@ -190,16 +191,21 @@ function Track({ hist, bet, price, flashing, win }: { hist: number[]; bet: Bet |
   const col = flashing ? (win ? "#39ff14" : "#ff2bd6") : "#00e5ff";
 
   return (
-    <div className="panel clip relative w-full overflow-hidden" style={{ borderColor: flashing ? col : undefined, boxShadow: flashing ? `0 0 26px ${col}55` : undefined }}>
-      <svg viewBox={`0 0 ${w} ${h}`} className="h-[280px] w-full">
+    <div className="absolute inset-0 transition-shadow" style={{ boxShadow: flashing ? `inset 0 0 90px ${col}44` : undefined }}>
+      <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className="h-full w-full">
+        {/* faint grid */}
+        {[0.25, 0.5, 0.75].map((f) => (
+          <line key={f} x1={0} y1={h * f} x2={w} y2={h * f} stroke="rgba(255,255,255,0.04)" strokeWidth={1} />
+        ))}
         {bet && (
           <>
+            <rect x={0} y={y(bet.up)} width={w} height={Math.max(0, y(bet.down) - y(bet.up))} fill="rgba(0,229,255,0.03)" />
             <BarrierLine y={y(bet.up)} w={w} color="#39ff14" label={`UP  ${bet.up.toFixed(0)}`} />
             <BarrierLine y={y(bet.down)} w={w} color="#ff2bd6" label={`DOWN  ${bet.down.toFixed(0)}`} bottom />
-            <line x1={0} y1={y(bet.entry)} x2={w} y2={y(bet.entry)} stroke="rgba(255,255,255,0.25)" strokeWidth={1} strokeDasharray="4 5" />
+            <line x1={0} y1={y(bet.entry)} x2={w} y2={y(bet.entry)} stroke="rgba(255,255,255,0.28)" strokeWidth={1} strokeDasharray="4 5" />
           </>
         )}
-        <polyline points={line} fill="none" stroke={col} strokeWidth={2.4} strokeLinejoin="round" strokeLinecap="round" style={{ filter: `drop-shadow(0 0 6px ${col})` }} />
+        <polyline points={line} fill="none" stroke={col} strokeWidth={2.4} strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" style={{ filter: `drop-shadow(0 0 6px ${col})` }} />
         {pts.length > 0 && <circle cx={w} cy={y(price)} r={5} fill="#eafff0" style={{ filter: `drop-shadow(0 0 8px ${col})` }} />}
       </svg>
     </div>
@@ -215,14 +221,14 @@ function BarrierLine({ y, w, color, label, bottom }: { y: number; w: number; col
   );
 }
 
-function RoundBtn({ dir, onClick, stake }: { dir: "up" | "down"; onClick: () => void; stake: number }) {
+function RoundBtn({ dir, onClick, stake, payout }: { dir: "up" | "down"; onClick: () => void; stake: number; payout: number }) {
   const up = dir === "up";
   return (
-    <button onClick={onClick} className={`grid h-28 w-28 place-items-center rounded-full border-2 transition hover:scale-105 ${up ? "border-lime bg-lime/15 text-lime hover:bg-lime/25" : "border-magenta bg-magenta/15 text-magenta hover:bg-magenta/25"}`} style={{ boxShadow: `0 0 28px ${up ? "rgba(57,255,20,.45)" : "rgba(255,43,214,.45)"}` }}>
+    <button onClick={onClick} className={`grid h-28 w-28 place-items-center rounded-full border-2 transition hover:scale-105 active:scale-95 ${up ? "border-lime bg-lime/15 text-lime hover:bg-lime/25" : "border-magenta bg-magenta/15 text-magenta hover:bg-magenta/25"}`} style={{ boxShadow: `0 0 28px ${up ? "rgba(57,255,20,.45)" : "rgba(255,43,214,.45)"}` }}>
       <div className="flex flex-col items-center leading-none">
-        {up ? <ArrowUp size={36} strokeWidth={2.6} /> : <ArrowDown size={36} strokeWidth={2.6} />}
+        {up ? <ArrowUp size={34} strokeWidth={2.6} /> : <ArrowDown size={34} strokeWidth={2.6} />}
         <span className="mt-1 font-display text-sm font-black tracking-widest">{up ? "UP" : "DOWN"}</span>
-        <span className="mt-0.5 font-mono text-[10px] opacity-70">{usdc(stake)}</span>
+        <span className="mt-1 font-mono text-[10px] opacity-70">{usdc(stake)} → {payout}×</span>
       </div>
     </button>
   );
