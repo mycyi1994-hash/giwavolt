@@ -5,6 +5,7 @@ import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { Zap, Terminal } from "lucide-react";
 import DiceHand from "@/components/landing/DiceHand";
 import SoundToggle from "@/components/play/SoundToggle";
+import AmbientBackground from "@/components/AmbientBackground";
 import { useWalletGate } from "@/lib/walletGate";
 
 export default function Landing() {
@@ -15,9 +16,12 @@ export default function Landing() {
   const go = (path: string) => () => requireWallet(() => router.push(path));
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden">
+    <div className="relative flex h-screen flex-col overflow-hidden">
+      {/* live chart backdrop */}
+      <AmbientBackground />
+
       {/* top bar */}
-      <header className="flex h-14 shrink-0 items-center px-5">
+      <header className="relative z-10 flex h-14 shrink-0 items-center px-5">
         <div className="flex items-center gap-2.5">
           <div className="grid h-8 w-8 place-items-center bg-gradient-to-br from-cyan to-magenta text-[#06060e] clip animate-glow">
             <Zap size={17} strokeWidth={2.6} />
@@ -31,7 +35,7 @@ export default function Landing() {
       </header>
 
       {/* hero */}
-      <main className="grid min-h-0 flex-1 place-items-center px-6">
+      <main className="relative z-10 grid min-h-0 flex-1 place-items-center px-6">
         <div className="grid w-full max-w-5xl grid-cols-1 items-center gap-8 md:grid-cols-2">
           {/* left: copy + CTAs */}
           <div className="order-2 md:order-1">
@@ -67,7 +71,7 @@ export default function Landing() {
         </div>
       </main>
 
-      <footer className="shrink-0 px-6 pb-4 text-center font-mono text-[10px] tracking-widest text-faint">
+      <footer className="relative z-10 shrink-0 px-6 pb-4 text-center font-mono text-[10px] tracking-widest text-faint">
         VOLT · BET FUN — Tap Trading · Death Fun · Leaderboard
       </footer>
     </div>

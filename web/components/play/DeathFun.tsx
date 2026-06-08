@@ -40,9 +40,9 @@ export default function DeathFun() {
   const nextMult = multiplierAfter(death.picks + 1, death.bombs, total);
   const winPct = firstPickWinPct(death.bombs, total);
 
-  // dynamic tile size so any board fits ~480px
-  const gap = death.dim > 14 ? 2 : death.dim > 8 ? 3 : 6;
-  const tilePx = Math.max(14, Math.min(58, Math.floor((480 - (death.dim - 1) * gap) / death.dim)));
+  // dynamic tile size — bigger boards so even ULTRA stays clickable
+  const gap = death.dim > 14 ? 3 : death.dim > 8 ? 5 : 8;
+  const tilePx = Math.max(22, Math.min(74, Math.floor((720 - (death.dim - 1) * gap) / death.dim)));
   const animate = death.dim <= 13;
 
   const start = () => {

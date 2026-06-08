@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { LineChart, Skull, Trophy, ArrowUpRight } from "lucide-react";
 import DiceHand from "@/components/landing/DiceHand";
+import AmbientBackground from "@/components/AmbientBackground";
 import { usePlay } from "@/components/play/PlayProvider";
 import { usdc, krw } from "@/lib/money";
 
@@ -15,8 +16,9 @@ const CARDS = [
 export default function TerminalHome() {
   const { mode, balance } = usePlay();
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="mx-auto max-w-5xl px-6 py-8">
+    <div className="relative h-full overflow-y-auto">
+      <AmbientBackground />
+      <div className="relative z-10 mx-auto max-w-5xl px-6 py-8">
         {/* hero */}
         <div className="panel clip grid grid-cols-1 items-center gap-4 p-6 md:grid-cols-[1fr_auto]">
           <div>

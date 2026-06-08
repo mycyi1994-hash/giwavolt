@@ -18,7 +18,7 @@
 // same model feeds the on-chain grid (game/contracts/scripts/grid.ts).
 
 export const HOUSE_EDGE = 0.07; // 7%
-export const MAX_MULT = 30;
+export const MAX_MULT = 100; // bigger payouts — far cells reach up to 100×
 export const MIN_MULT = 1.1;
 export const VOL_PER_SQRT_SEC = 0.00045; // "game" volatility, tuned for a lively line
 
@@ -60,8 +60,9 @@ export function cellMultiplier(lo: number, hi: number, hSeconds: number, price: 
   return m;
 }
 
-// 0..1 visual intensity for a multiplier (cell fill alpha / brightness)
+// 0..1 visual intensity for a multiplier — log-scaled so 10× already glows and
+// the big payouts (toward MAX_MULT) read as "hot".
 export function multIntensity(m: number): number {
-  const t = (m - MIN_MULT) / (MAX_MULT - MIN_MULT);
-  return Math.max(0, Math.min(1, Math.pow(t, 0.7)));
+  const t = Math.log(Math.max(m, 1)) / Math.log(MAX_MULT);
+  return Math.max(0, Math.min(1, t));
 }

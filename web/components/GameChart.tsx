@@ -36,15 +36,19 @@ type Bet = {
 };
 type Floater = { x: number; y: number; text: string; born: number; kind: "win" | "cancel" };
 
-// cyan → purple → magenta by intensity
+// cyan → purple → magenta → hot gold as the multiplier climbs
 function cellRGB(t: number): [number, number, number] {
   const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
-  if (t < 0.5) {
-    const k = t / 0.5;
-    return [lerp(0, 157, k), lerp(229, 77, k), lerp(255, 255, k)];
+  if (t < 0.4) {
+    const k = t / 0.4;
+    return [lerp(0, 157, k), lerp(229, 77, k), lerp(255, 255, k)]; // cyan → purple
   }
-  const k = (t - 0.5) / 0.5;
-  return [lerp(157, 255, k), lerp(77, 43, k), lerp(255, 214, k)];
+  if (t < 0.75) {
+    const k = (t - 0.4) / 0.35;
+    return [lerp(157, 255, k), lerp(77, 43, k), lerp(255, 214, k)]; // purple → magenta
+  }
+  const k = (t - 0.75) / 0.25;
+  return [255, lerp(43, 220, k), lerp(214, 70, k)]; // magenta → hot gold/orange
 }
 
 export default function GameChart({
@@ -338,16 +342,25 @@ export default function GameChart({
           const inten = multIntensity(m);
           const [r, g, bl] = cellRGB(inten);
           const isHover = hover && hover.colT === c.t && hover.band === b;
-          const a = 0.06 + inten * 0.5;
-          ctx.fillStyle = isHover ? `rgba(${r},${g},${bl},0.9)` : `rgba(${r},${g},${bl},${a.toFixed(3)})`;
+          const a = 0.06 + inten * 0.6;
+          // high-multiplier cells glow + faintly pulse — the bigger the hotter
+          const glow = inten > 0.55;
+          if (glow) {
+            ctx.shadowColor = `rgba(${r},${g},${bl},0.9)`;
+            ctx.shadowBlur = (4 + inten * 14) * (0.85 + 0.15 * Math.sin(now / 240 + b));
+          }
+          ctx.fillStyle = isHover ? `rgba(${r},${g},${bl},0.95)` : `rgba(${r},${g},${bl},${a.toFixed(3)})`;
           roundRect(ctx, x0 + 1.5, yTop + 1.5, cw - 3, ch - 3, 3);
           ctx.fill();
-          ctx.strokeStyle = `rgba(${r},${g},${bl},${(0.25 + inten * 0.55).toFixed(3)})`;
-          ctx.lineWidth = 1;
+          ctx.shadowBlur = 0;
+          ctx.strokeStyle = `rgba(${r},${g},${bl},${(0.3 + inten * 0.6).toFixed(3)})`;
+          ctx.lineWidth = glow ? 1.4 : 1;
           ctx.stroke();
-          if (ch > 13 && cw > 26) {
-            ctx.fillStyle = isHover ? "#06060e" : `rgba(233,243,255,${(0.5 + inten * 0.5).toFixed(3)})`;
+          if (ch > 13 && cw > 24) {
+            ctx.font = inten > 0.7 ? "800 12px var(--font-display, sans-serif)" : "600 11px var(--font-mono, monospace)";
+            ctx.fillStyle = isHover ? "#06060e" : inten > 0.7 ? `rgba(255,255,255,${(0.7 + inten * 0.3).toFixed(3)})` : `rgba(233,243,255,${(0.5 + inten * 0.5).toFixed(3)})`;
             ctx.fillText(fmtMult(m), (x0 + x1) / 2, (yTop + yBot) / 2);
+            ctx.font = "600 11px var(--font-mono, monospace)";
           }
         }
       }
