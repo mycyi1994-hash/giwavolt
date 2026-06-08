@@ -10,15 +10,17 @@ export type Market = {
   volume: number; // USDC
   ends: string; // human label
   spark: number[]; // recent YES price history for a sparkline
+  resolved?: "yes" | "no"; // set by admin when the event settles
 };
 
 export const CATEGORIES = ["All", "Crypto", "Economy", "Tech", "Sports", "Culture"] as const;
+export const MARKET_CATEGORIES = ["Crypto", "Economy", "Tech", "Sports", "Culture"] as const;
 
-function spark(seed: number, end: number): number[] {
+export function makeSpark(seed: number, end: number): number[] {
   const out: number[] = [];
-  let v = end - (seed % 17) - 4;
+  let v = end - (Math.abs(seed) % 17) - 4;
   for (let i = 0; i < 16; i++) {
-    v += Math.sin(seed * 0.7 + i) * 3 + ((seed * (i + 3)) % 5) - 2;
+    v += Math.sin(seed * 0.7 + i) * 3 + ((Math.abs(seed) * (i + 3)) % 5) - 2;
     out.push(Math.max(3, Math.min(97, Math.round(v))));
   }
   out[out.length - 1] = end;
@@ -40,7 +42,7 @@ const RAW: Omit<Market, "spark">[] = [
   { id: "box-office", category: "Culture", question: "Will the summer blockbuster top $1B worldwide?", yes: 60, change: 5, volume: 401200, ends: "52d" },
 ];
 
-export const MARKETS: Market[] = RAW.map((m, i) => ({ ...m, spark: spark(i * 31 + m.yes, m.yes) }));
+export const MARKETS: Market[] = RAW.map((m, i) => ({ ...m, spark: makeSpark(i * 31 + m.yes, m.yes) }));
 
 export function fmtVolume(n: number): string {
   if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;

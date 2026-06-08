@@ -1,8 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { TrendingUp, Clock, Search } from "lucide-react";
-import { MARKETS, CATEGORIES, fmtVolume, type Market } from "@/lib/predict";
+import Link from "next/link";
+import { TrendingUp, Clock, Search, Settings } from "lucide-react";
+import { CATEGORIES, fmtVolume, type Market } from "@/lib/predict";
+import { useMarkets } from "@/components/predict/MarketsProvider";
 import { useWalletGate } from "@/lib/walletGate";
 import { useToast } from "@/components/ui/Toast";
 import { sfx } from "@/lib/sound";
@@ -10,13 +12,14 @@ import { sfx } from "@/lib/sound";
 export default function PredictPage() {
   const [cat, setCat] = useState<(typeof CATEGORIES)[number]>("All");
   const [q, setQ] = useState("");
+  const { markets: all } = useMarkets();
   const { requireWallet } = useWalletGate();
   const toast = useToast();
 
   const markets = useMemo(
     () =>
-      MARKETS.filter((m) => (cat === "All" || m.category === cat) && m.question.toLowerCase().includes(q.toLowerCase())),
-    [cat, q]
+      all.filter((m) => (cat === "All" || m.category === cat) && m.question.toLowerCase().includes(q.toLowerCase())),
+    [all, cat, q]
   );
 
   const trade = (m: Market, side: "yes" | "no") => {
@@ -40,14 +43,22 @@ export default function PredictPage() {
               Trade <span className="text-lime">YES</span> / <span className="text-magenta">NO</span> on real-world events — price = implied odds.
             </p>
           </div>
-          <div className="flex items-center gap-2 border border-line bg-ink-2 px-3 py-2 clip">
-            <Search size={14} className="text-faint" />
-            <input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Search markets…"
-              className="w-44 bg-transparent text-[13px] text-txt outline-none placeholder:text-faint"
-            />
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 border border-line bg-ink-2 px-3 py-2 clip">
+              <Search size={14} className="text-faint" />
+              <input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Search markets…"
+                className="w-40 bg-transparent text-[13px] text-txt outline-none placeholder:text-faint"
+              />
+            </div>
+            <Link
+              href="/terminal/admin"
+              className="flex items-center gap-1.5 border border-line bg-ink-2 px-3 py-2 font-display text-[12px] font-bold text-muted clip transition hover:border-cyan/50 hover:text-cyan"
+            >
+              <Settings size={14} /> MANAGE
+            </Link>
           </div>
         </div>
 
@@ -87,9 +98,15 @@ function MarketCard({ m, onTrade }: { m: Market; onTrade: (m: Market, s: "yes" |
     <div className="panel clip flex flex-col gap-3 p-4 transition hover:-translate-y-0.5">
       <div className="flex items-center justify-between font-mono text-[10px] tracking-wider">
         <span className="border border-line bg-ink-2 px-2 py-0.5 text-cyan clip">{m.category.toUpperCase()}</span>
-        <span className="flex items-center gap-1 text-faint">
-          <Clock size={11} /> {m.ends}
-        </span>
+        {m.resolved ? (
+          <span className={`clip px-2 py-0.5 font-bold ${m.resolved === "yes" ? "bg-lime/20 text-lime" : "bg-magenta/20 text-magenta"}`}>
+            RESOLVED · {m.resolved.toUpperCase()}
+          </span>
+        ) : (
+          <span className="flex items-center gap-1 text-faint">
+            <Clock size={11} /> {m.ends}
+          </span>
+        )}
       </div>
 
       <p className="min-h-[40px] font-display text-[15px] font-bold leading-snug text-txt">{m.question}</p>
@@ -105,13 +122,15 @@ function MarketCard({ m, onTrade }: { m: Market; onTrade: (m: Market, s: "yes" |
       <div className="grid grid-cols-2 gap-2">
         <button
           onClick={() => onTrade(m, "yes")}
-          className="clip border border-lime/50 bg-lime/10 py-2 font-display text-[13px] font-bold text-lime transition hover:bg-lime/20"
+          disabled={!!m.resolved}
+          className="clip border border-lime/50 bg-lime/10 py-2 font-display text-[13px] font-bold text-lime transition hover:bg-lime/20 disabled:opacity-30"
         >
           YES {m.yes}¢
         </button>
         <button
           onClick={() => onTrade(m, "no")}
-          className="clip border border-magenta/50 bg-magenta/10 py-2 font-display text-[13px] font-bold text-magenta transition hover:bg-magenta/20"
+          disabled={!!m.resolved}
+          className="clip border border-magenta/50 bg-magenta/10 py-2 font-display text-[13px] font-bold text-magenta transition hover:bg-magenta/20 disabled:opacity-30"
         >
           NO {100 - m.yes}¢
         </button>
