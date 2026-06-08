@@ -17,7 +17,7 @@ const COL_INTERVAL_MS = 3_400;
 const STEP_PCT = 0.00058;
 const MIN_ROWS = 16;
 const MAX_ROWS = 24;
-const TICK_MS = 180;
+const TICK_MS = 80; // denser samples → smoother line
 const PAD_TOP = 16;
 const PAD_BOTTOM = 28;
 const MIN_BET_HORIZON = 10; // seconds — cannot bet on columns closer than this
@@ -91,6 +91,7 @@ export default function GameChart({
     const anchor = 1673.49;
     const step = anchor * STEP_PCT;
     let price = anchor;
+    let renderPrice = anchor; // eased toward `price` every frame for a smooth head
     const history: { t: number; p: number }[] = [{ t: Date.now(), p: price }];
     const columns: Column[] = [];
     const bets: Bet[] = [];
@@ -290,11 +291,13 @@ export default function GameChart({
         if (h.p < lo) lo = h.p;
         if (h.p > hi) hi = h.p;
       }
-      const center = (lo + hi) / 2;
+      // keep the CURRENT price pinned to the vertical centre (don't drift with
+      // trend); half-height tracks recent volatility, clamped + zoomed.
+      const center = renderPrice;
       const z = zoomRef.current;
       const half = Math.min(Math.max((hi - lo) / 2 + step * 2, (MIN_ROWS * step) / 2), (MAX_ROWS * step) / 2) / z;
-      range.min += (center - half - range.min) * 0.08;
-      range.max += (center + half - range.max) * 0.08;
+      range.min += (center - half - range.min) * 0.1;
+      range.max += (center + half - range.max) * 0.1;
     }
 
     function draw() {
@@ -302,6 +305,7 @@ export default function GameChart({
       stepPrice(now);
       ensureColumns(now);
       updateRange(now);
+      renderPrice += (price - renderPrice) * 0.16; // smooth the leading edge
 
       ctx.clearRect(0, 0, W, H);
       const nowX = W * NOW_X;
@@ -361,38 +365,53 @@ export default function GameChart({
 
       // ---- locked zone (< MIN_BET_HORIZON s) ----
       if (lockX > nowX) {
+        const pulse = 0.5 + 0.5 * Math.sin(now / 320);
+        const ph = (now / 28) % 16; // moving stripes
         ctx.save();
         ctx.beginPath();
         ctx.rect(nowX, plotTop, lockX - nowX, plotBot() - plotTop);
         ctx.clip();
-        ctx.fillStyle = "rgba(10,10,22,0.55)";
+        ctx.fillStyle = "rgba(8,6,16,0.62)";
         ctx.fillRect(nowX, plotTop, lockX - nowX, plotBot() - plotTop);
-        ctx.strokeStyle = "rgba(255,43,214,0.12)";
-        ctx.lineWidth = 1;
-        for (let x = nowX - 40; x < lockX + 40; x += 9) {
+        ctx.strokeStyle = `rgba(255,43,214,${(0.1 + pulse * 0.12).toFixed(3)})`;
+        ctx.lineWidth = 2;
+        for (let x = nowX - 60 + ph; x < lockX + 60; x += 16) {
           ctx.beginPath();
           ctx.moveTo(x, plotTop);
-          ctx.lineTo(x + 40, plotBot());
+          ctx.lineTo(x + 60, plotBot());
           ctx.stroke();
         }
         ctx.restore();
-        // lock boundary line
-        ctx.strokeStyle = "rgba(255,43,214,0.8)";
-        ctx.shadowColor = "rgba(255,43,214,0.7)";
-        ctx.shadowBlur = 10;
-        ctx.setLineDash([6, 5]);
+
+        // boundary line — pulsing neon
+        ctx.strokeStyle = `rgba(255,43,214,${(0.6 + pulse * 0.4).toFixed(3)})`;
+        ctx.shadowColor = "rgba(255,43,214,0.9)";
+        ctx.shadowBlur = 8 + pulse * 14;
+        ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.moveTo(lockX, plotTop);
         ctx.lineTo(lockX, plotBot());
         ctx.stroke();
-        ctx.setLineDash([]);
         ctx.shadowBlur = 0;
-        ctx.fillStyle = "rgba(255,43,214,0.9)";
+
+        // vertical "LOCKED" — one letter per line, centred, glowing
+        const cx = (nowX + lockX) / 2;
+        const letters = "LOCKED".split("");
+        const lh = Math.min(26, (plotBot() - plotTop) / 8);
+        const startY = (plotTop + plotBot()) / 2 - ((letters.length - 1) * lh) / 2;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.font = `900 ${Math.round(lh * 0.78)}px var(--font-display, sans-serif)`;
+        ctx.shadowColor = "rgba(255,43,214,0.95)";
+        letters.forEach((ch, i) => {
+          ctx.shadowBlur = 10 + pulse * 10;
+          ctx.fillStyle = `rgba(255,${Math.round(120 + pulse * 80)},230,1)`;
+          ctx.fillText(ch, cx, startY + i * lh);
+        });
+        ctx.shadowBlur = 0;
         ctx.font = "700 9px var(--font-mono, monospace)";
-        ctx.save();
-        ctx.translate((nowX + lockX) / 2, plotTop + 12);
-        ctx.fillText("⟂ LOCKED  <10s", 0, 0);
-        ctx.restore();
+        ctx.fillStyle = "rgba(255,43,214,0.7)";
+        ctx.fillText("< 10s", cx, startY + letters.length * lh);
       }
 
       // ---- active bet markers ----
@@ -424,27 +443,30 @@ export default function GameChart({
         }
       }
 
-      // ---- price line (neon green) ----
+      // ---- price line (neon green, Catmull-Rom-ish smoothing) ----
+      const lx = xForTime(now, now);
+      const ly = yForPrice(renderPrice);
+      const pts: { x: number; y: number }[] = [];
+      for (const pt of history) pts.push({ x: xForTime(pt.t, now), y: yForPrice(pt.p) });
+      pts.push({ x: lx, y: ly }); // smoothed leading edge
       ctx.lineWidth = 2.2;
+      ctx.lineJoin = "round";
+      ctx.lineCap = "round";
       ctx.strokeStyle = "#39ff14";
       ctx.shadowColor = "rgba(57,255,20,0.7)";
       ctx.shadowBlur = 12;
-      ctx.beginPath();
-      let started = false;
-      for (const pt of history) {
-        const x = xForTime(pt.t, now);
-        const y = yForPrice(pt.p);
-        if (!started) {
-          ctx.moveTo(x, y);
-          started = true;
-        } else ctx.lineTo(x, y);
+      if (pts.length >= 2) {
+        ctx.beginPath();
+        ctx.moveTo(pts[0].x, pts[0].y);
+        for (let i = 1; i < pts.length - 1; i++) {
+          const mx = (pts[i].x + pts[i + 1].x) / 2;
+          const my = (pts[i].y + pts[i + 1].y) / 2;
+          ctx.quadraticCurveTo(pts[i].x, pts[i].y, mx, my);
+        }
+        ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
+        ctx.stroke();
       }
-      ctx.stroke();
       ctx.shadowBlur = 0;
-
-      // leading dot + pulse
-      const lx = xForTime(now, now);
-      const ly = yForPrice(price);
       const pulse = 6 + 3 * Math.sin(now / 220);
       ctx.strokeStyle = "rgba(57,255,20,0.5)";
       ctx.lineWidth = 1.5;
@@ -507,37 +529,61 @@ export default function GameChart({
         ctx.globalAlpha = 1;
       }
 
-      // ---- win ○ / lose ✕ neon effects (framed box) ----
+      // ---- win ○ / lose ✕ neon effects — small but flashy ----
       for (let i = effects.length - 1; i >= 0; i--) {
         const ef = effects[i];
         const age = now - ef.born;
-        if (age > 1000) {
+        if (age > 900) {
           effects.splice(i, 1);
           continue;
         }
-        const t = age / 1000;
-        const grow = Math.min(1, t / 0.25);
-        const s = (22 + grow * 8) * (1 + (zoomRef.current - 1) * 0.3);
-        ctx.globalAlpha = t < 0.7 ? 1 : 1 - (t - 0.7) / 0.3;
+        const t = age / 900;
+        const grow = t < 0.22 ? t / 0.22 : 1; // snappy pop
+        const ease = 1 - Math.pow(1 - grow, 3);
+        const s = 13 * ease; // small core
         const col = ef.kind === "win" ? "#39ff14" : "#ff2bd6";
+        ctx.save();
+        ctx.translate(ef.x, ef.y);
+        ctx.globalAlpha = t < 0.6 ? 1 : 1 - (t - 0.6) / 0.4;
+
+        // radiating spark rays (the "flash")
+        const rays = 8;
+        const rayLen = 10 + ease * 16 + t * 8;
         ctx.strokeStyle = col;
         ctx.shadowColor = col;
-        ctx.shadowBlur = 16;
-        ctx.lineWidth = 2.4;
-        roundRect(ctx, ef.x - s, ef.y - s, s * 2, s * 2, 6);
-        ctx.stroke();
-        ctx.beginPath();
-        if (ef.kind === "win") {
-          ctx.arc(ef.x, ef.y, s * 0.55, 0, Math.PI * 2 * grow);
-          ctx.stroke();
-        } else {
-          const d = s * 0.5 * grow;
-          ctx.moveTo(ef.x - d, ef.y - d);
-          ctx.lineTo(ef.x + d, ef.y + d);
-          ctx.moveTo(ef.x + d, ef.y - d);
-          ctx.lineTo(ef.x - d, ef.y + d);
+        ctx.shadowBlur = 12;
+        ctx.lineWidth = 1.6;
+        for (let k = 0; k < rays; k++) {
+          const a = (k / rays) * Math.PI * 2 + t * 1.2;
+          const r0 = s + 3;
+          ctx.globalAlpha = (t < 0.6 ? 1 : 1 - (t - 0.6) / 0.4) * 0.8;
+          ctx.beginPath();
+          ctx.moveTo(Math.cos(a) * r0, Math.sin(a) * r0);
+          ctx.lineTo(Math.cos(a) * (r0 + rayLen), Math.sin(a) * (r0 + rayLen));
           ctx.stroke();
         }
+        // expanding shock ring
+        ctx.globalAlpha = (1 - t) * 0.6;
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        ctx.arc(0, 0, s + 4 + t * 22, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // core mark
+        ctx.globalAlpha = t < 0.6 ? 1 : 1 - (t - 0.6) / 0.4;
+        ctx.lineWidth = 2.6;
+        ctx.shadowBlur = 16;
+        ctx.beginPath();
+        if (ef.kind === "win") {
+          ctx.arc(0, 0, s, 0, Math.PI * 2);
+        } else {
+          ctx.moveTo(-s * 0.7, -s * 0.7);
+          ctx.lineTo(s * 0.7, s * 0.7);
+          ctx.moveTo(s * 0.7, -s * 0.7);
+          ctx.lineTo(-s * 0.7, s * 0.7);
+        }
+        ctx.stroke();
+        ctx.restore();
         ctx.shadowBlur = 0;
         ctx.globalAlpha = 1;
       }

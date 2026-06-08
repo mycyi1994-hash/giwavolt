@@ -7,7 +7,8 @@ import ModeToggle from "./ModeToggle";
 import AnimatedNumber from "@/components/ui/AnimatedNumber";
 import { useToast } from "@/components/ui/Toast";
 import { sfx } from "@/lib/sound";
-import { newBoard, multiplierAfter, revealAll, MIN_BOMBS, MAX_BOMBS } from "@/lib/death";
+import { newBoard, multiplierAfter, revealAll, DIFFICULTIES, DIFFICULTY_ORDER, firstPickWinPct } from "@/lib/death";
+import type { Difficulty } from "@/lib/types";
 import { usdc, krw } from "@/lib/money";
 
 const PRESETS = [1, 5, 10, 100];
@@ -17,22 +18,22 @@ export default function DeathFun() {
   const toast = useToast();
   const [stake, setStake] = useState(5);
   const [custom, setCustom] = useState("");
+  const [diff, setDiff] = useState<Difficulty>("medium");
   const [shake, setShake] = useState(false);
   const [burst, setBurst] = useState(false);
 
-  // ensure an idle board exists; reroll when mode changes while idle
   useEffect(() => {
-    if (!death || (death.status !== "playing" && death.mode !== mode)) setDeath(newBoard(mode));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode]);
-  useEffect(() => {
-    if (!death) setDeath(newBoard(mode));
+    if (!death) setDeath(newBoard(mode, diff));
+    else setDiff(death.difficulty);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  useEffect(() => {
+    if (death && death.status !== "playing" && death.mode !== mode) setDeath(newBoard(mode, diff));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
 
   if (!death) return null;
 
-  // Death Fun has no on-chain contract yet — Real mode is gated.
   if (mode === "real") {
     return (
       <div className="grid h-full place-items-center p-6">
@@ -48,11 +49,18 @@ export default function DeathFun() {
   }
 
   const playing = death.status === "playing";
+  const total = death.dim * death.dim;
   const value = +(death.stake * death.multiplier).toFixed(2);
-  const nextMult = multiplierAfter(death.picks + 1, death.bombs);
+  const nextMult = multiplierAfter(death.picks + 1, death.bombs, total);
+  const winPct = firstPickWinPct(death.bombs, total);
+
+  // dynamic tile size so any board fits ~480px
+  const gap = death.dim > 14 ? 2 : death.dim > 8 ? 3 : 6;
+  const tilePx = Math.max(14, Math.min(58, Math.floor((480 - (death.dim - 1) * gap) / death.dim)));
+  const animate = death.dim <= 13;
 
   const start = () => {
-    if (death.status !== "idle") return; // must be a fresh, unseen board
+    if (death.status !== "idle") return;
     if (stake <= 0 || balance[mode] < stake) return;
     sfx.place();
     adjust(mode, -stake);
@@ -72,7 +80,7 @@ export default function DeathFun() {
       const tiles = death.tiles.slice();
       tiles[i] = "safe";
       const picks = death.picks + 1;
-      setDeath({ ...death, tiles, picks, multiplier: multiplierAfter(picks, death.bombs) });
+      setDeath({ ...death, tiles, picks, multiplier: multiplierAfter(picks, death.bombs, total) });
     }
   };
   const stop = () => {
@@ -88,7 +96,13 @@ export default function DeathFun() {
   const stageReset = () => {
     if (playing) return;
     sfx.tick();
-    setDeath(newBoard(mode));
+    setDeath(newBoard(mode, diff));
+  };
+  const chooseDiff = (d: Difficulty) => {
+    if (playing) return;
+    sfx.select();
+    setDiff(d);
+    setDeath(newBoard(mode, d));
   };
   const applyCustom = (v: string) => {
     setCustom(v);
@@ -99,7 +113,7 @@ export default function DeathFun() {
   return (
     <div className="flex h-full flex-col md:flex-row">
       {/* controls */}
-      <aside className="flex w-full shrink-0 flex-col gap-5 border-b border-line bg-ink/40 p-4 md:w-[270px] md:border-b-0 md:border-r">
+      <aside className="flex w-full shrink-0 flex-col gap-4 overflow-y-auto border-b border-line bg-ink/40 p-4 md:w-[272px] md:border-b-0 md:border-r">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 font-display text-sm font-bold tracking-wide text-magenta">
             <Skull size={16} /> DEATH FUN
@@ -107,13 +121,37 @@ export default function DeathFun() {
           <ModeToggle />
         </div>
 
+        {/* difficulty */}
+        <div className={playing ? "pointer-events-none opacity-40" : ""}>
+          <div className="mb-2 font-mono text-[10px] tracking-[0.2em] text-faint">DIFFICULTY</div>
+          <div className="grid grid-cols-2 gap-1.5">
+            {DIFFICULTY_ORDER.map((d) => {
+              const cfg = DIFFICULTIES[d];
+              const active = d === diff;
+              return (
+                <button
+                  key={d}
+                  onClick={() => chooseDiff(d)}
+                  className={`clip flex flex-col items-center py-2 font-display text-[12px] font-bold transition ${
+                    active ? "border border-magenta bg-magenta/15 text-magenta" : "border border-line bg-ink-2 text-muted hover:text-txt"
+                  }`}
+                >
+                  {cfg.label}
+                  <span className="font-mono text-[9px] text-faint">
+                    {cfg.dim}×{cfg.dim}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         <div>
           <div className="mb-1 font-mono text-[10px] tracking-[0.2em] text-faint">BALANCE</div>
-          <div className="tabular text-[26px] font-black leading-none text-cyan neon-cyan">{usdc(balance[mode])}</div>
+          <div className="tabular text-[24px] font-black leading-none text-cyan neon-cyan">{usdc(balance[mode])}</div>
           <div className="tabular text-[11px] text-faint">{krw(balance[mode])}</div>
         </div>
 
-        {/* stake */}
         <div className={playing ? "pointer-events-none opacity-40" : ""}>
           <div className="mb-2 font-mono text-[10px] tracking-[0.2em] text-faint">BET SIZE</div>
           <div className="grid grid-cols-4 gap-1.5">
@@ -127,7 +165,7 @@ export default function DeathFun() {
                     setCustom("");
                     setStake(b);
                   }}
-                  className={`clip py-2.5 font-mono text-[13px] font-bold tabular transition ${
+                  className={`clip py-2 font-mono text-[13px] font-bold tabular transition ${
                     active ? "border border-magenta bg-magenta/10 text-magenta" : "border border-line bg-ink-2 text-muted hover:text-txt"
                   }`}
                 >
@@ -148,12 +186,8 @@ export default function DeathFun() {
           </div>
         </div>
 
-        {/* primary action */}
         {playing ? (
-          <button
-            onClick={stop}
-            className="clip border border-lime bg-lime/15 py-3 font-display text-sm font-black tracking-widest text-lime animate-glow"
-          >
+          <button onClick={stop} className="clip border border-lime bg-lime/15 py-3 font-display text-sm font-black tracking-widest text-lime animate-glow">
             STOP · CASH OUT {usdc(value)}
           </button>
         ) : death.status === "idle" ? (
@@ -166,15 +200,11 @@ export default function DeathFun() {
             BET {usdc(stake)}
           </button>
         ) : (
-          <button
-            onClick={stageReset}
-            className="btn-neon clip flex items-center justify-center gap-1.5 bg-cyan/15 py-3 font-display text-sm font-black tracking-widest text-cyan"
-          >
+          <button onClick={stageReset} className="btn-neon clip flex items-center justify-center gap-1.5 bg-cyan/15 py-3 font-display text-sm font-black tracking-widest text-cyan">
             <Shuffle size={15} /> NEW BOARD
           </button>
         )}
 
-        {/* reroll the idle board */}
         {death.status === "idle" && (
           <button
             onClick={stageReset}
@@ -184,21 +214,18 @@ export default function DeathFun() {
           </button>
         )}
 
-        <div className="mt-auto space-y-1.5 border-t border-line pt-3 font-sans text-[12px] leading-relaxed text-muted">
+        <div className="mt-auto space-y-1 border-t border-line pt-3 font-sans text-[12px] leading-relaxed text-muted">
           <p>
-            <span className="text-magenta">›</span> Reveal safe tiles to climb the multiplier. Hit a{" "}
-            <span className="text-magenta">skull</span> and you bust.
+            <span className="text-magenta">›</span> {death.bombs} skulls / {total} tiles · first-tap safe{" "}
+            <span className="text-lime">{winPct.toFixed(1)}%</span>
           </p>
-          <p className="text-faint">
-            {MIN_BOMBS}–{MAX_BOMBS} skulls, random each board · STOP locks your win · switch tabs anytime, it waits.
-          </p>
+          <p className="text-faint">7% house edge · STOP locks your win · tabs wait while you play.</p>
         </div>
       </aside>
 
       {/* board */}
-      <main className="relative grid min-w-0 flex-1 place-items-center p-6">
-        {/* status header */}
-        <div className="absolute inset-x-0 top-4 flex items-center justify-center gap-6 font-mono text-[12px]">
+      <main className="relative grid min-w-0 flex-1 place-items-center overflow-auto p-6">
+        <div className="absolute inset-x-0 top-4 flex flex-wrap items-center justify-center gap-x-6 gap-y-1 font-mono text-[12px]">
           <Tag label="SKULLS" value={`${death.bombs}`} cls="text-magenta" />
           <span className="flex items-center gap-1.5">
             <span className="tracking-[0.2em] text-faint">MULT</span>
@@ -213,22 +240,20 @@ export default function DeathFun() {
 
         <div className="relative flex flex-col items-center gap-4">
           {burst && <Burst />}
-          <div className={`grid grid-cols-5 gap-2.5 ${shake ? "animate-shake" : ""}`}>
+          <div
+            className={shake ? "animate-shake" : ""}
+            style={{ display: "grid", gridTemplateColumns: `repeat(${death.dim}, ${tilePx}px)`, gap }}
+          >
             {death.tiles.map((t, i) => (
-              <Tile key={`${i}-${t}`} t={t} active={playing} preview={playing ? `${nextMult.toFixed(2)}×` : ""} onClick={() => reveal(i)} />
+              <Tile key={`${i}-${t}`} t={t} size={tilePx} active={playing} animate={animate} preview={playing && tilePx >= 30 ? `${nextMult.toFixed(2)}×` : ""} onClick={() => reveal(i)} />
             ))}
           </div>
 
-          {/* result banner */}
-          {death.status === "busted" && (
-            <Banner cls="border-magenta text-magenta" icon={<Skull size={18} />} text={`BUSTED — lost ${usdc(death.stake)}`} />
-          )}
-          {death.status === "stopped" && (
-            <Banner cls="border-lime text-lime" icon={<Gem size={18} />} text={`CASHED OUT +${usdc(death.cashout)} (${death.multiplier.toFixed(2)}×)`} />
-          )}
+          {death.status === "busted" && <Banner cls="border-magenta text-magenta" icon={<Skull size={18} />} text={`BUSTED — lost ${usdc(death.stake)}`} />}
+          {death.status === "stopped" && <Banner cls="border-lime text-lime" icon={<Gem size={18} />} text={`CASHED OUT +${usdc(death.cashout)} (${death.multiplier.toFixed(2)}×)`} />}
           {death.status === "idle" && (
             <p className="font-mono text-[11px] tracking-wider text-faint">
-              <Hand size={12} className="mr-1 inline" /> set a bet and hit BET — skulls are hidden & random
+              <Hand size={12} className="mr-1 inline" /> pick difficulty & bet — skulls form a hidden pattern
             </p>
           )}
         </div>
@@ -237,35 +262,65 @@ export default function DeathFun() {
   );
 }
 
-function Tile({ t, active, preview, onClick }: { t: string; active: boolean; preview: string; onClick: () => void }) {
-  const base = "grid h-16 w-16 place-items-center clip border transition";
+function Tile({
+  t,
+  size,
+  active,
+  animate,
+  preview,
+  onClick,
+}: {
+  t: string;
+  size: number;
+  active: boolean;
+  animate: boolean;
+  preview: string;
+  onClick: () => void;
+}) {
+  const base = "grid place-items-center clip border transition";
+  const rev = animate ? "animate-reveal" : "";
+  const icon = size >= 26;
   if (t === "skull")
     return (
-      <div className={`${base} animate-reveal border-magenta bg-magenta/15 text-magenta`} style={{ boxShadow: "0 0 14px rgba(255,43,214,.4)" }}>
-        <Skull size={26} />
+      <div className={`${base} ${rev} border-magenta bg-magenta/15 text-magenta`} style={{ width: size, height: size, boxShadow: "0 0 10px rgba(255,43,214,.4)" }}>
+        {icon ? <Skull size={Math.round(size * 0.55)} /> : <span className="h-1.5 w-1.5 rounded-full bg-magenta" />}
       </div>
     );
   if (t === "safe")
     return (
-      <div className={`${base} animate-reveal border-lime bg-lime/12 text-lime`} style={{ boxShadow: "0 0 12px rgba(57,255,20,.3)" }}>
-        <Gem size={22} />
+      <div className={`${base} ${rev} border-lime bg-lime/12 text-lime`} style={{ width: size, height: size, boxShadow: "0 0 8px rgba(57,255,20,.3)" }}>
+        {icon ? <Gem size={Math.round(size * 0.5)} /> : <span className="h-1.5 w-1.5 rounded-full bg-lime" />}
       </div>
     );
   return (
     <button
       onClick={onClick}
       disabled={!active}
-      className={`${base} group relative border-line bg-ink-2 text-faint ${
-        active ? "cursor-pointer hover:border-cyan hover:text-cyan hover:bg-cyan/10" : "cursor-default"
-      }`}
+      style={{ width: size, height: size }}
+      className={`${base} group relative border-line bg-ink-2 text-faint ${active ? "cursor-pointer hover:border-cyan hover:text-cyan hover:bg-cyan/10" : "cursor-default"}`}
     >
-      <span className="font-display text-lg font-black opacity-40 transition group-hover:opacity-0">?</span>
-      {active && preview && (
-        <span className="tabular absolute inset-0 grid place-items-center font-mono text-[12px] font-bold text-cyan opacity-0 transition group-hover:opacity-100">
-          {preview}
-        </span>
+      {size >= 22 && <span className="font-display font-black opacity-30 transition group-hover:opacity-0" style={{ fontSize: Math.round(size * 0.4) }}>?</span>}
+      {preview && (
+        <span className="tabular absolute inset-0 grid place-items-center font-mono text-[11px] font-bold text-cyan opacity-0 transition group-hover:opacity-100">{preview}</span>
       )}
     </button>
+  );
+}
+
+function Tag({ label, value, cls }: { label: string; value: string; cls: string }) {
+  return (
+    <span className="flex items-center gap-1.5">
+      <span className="tracking-[0.2em] text-faint">{label}</span>
+      <span className={`tabular font-bold ${cls}`}>{value}</span>
+    </span>
+  );
+}
+
+function Banner({ cls, icon, text }: { cls: string; icon: React.ReactNode; text: string }) {
+  return (
+    <div className={`panel clip flex items-center gap-2 border px-4 py-2 font-display text-sm font-bold tracking-wide ${cls}`}>
+      {icon} {text}
+    </div>
   );
 }
 
@@ -292,23 +347,6 @@ function Burst() {
           />
         );
       })}
-    </div>
-  );
-}
-
-function Tag({ label, value, cls }: { label: string; value: string; cls: string }) {
-  return (
-    <span className="flex items-center gap-1.5">
-      <span className="tracking-[0.2em] text-faint">{label}</span>
-      <span className={`tabular font-bold ${cls}`}>{value}</span>
-    </span>
-  );
-}
-
-function Banner({ cls, icon, text }: { cls: string; icon: React.ReactNode; text: string }) {
-  return (
-    <div className={`panel clip flex items-center gap-2 border px-4 py-2 font-display text-sm font-bold tracking-wide ${cls}`}>
-      {icon} {text}
     </div>
   );
 }
