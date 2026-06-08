@@ -55,6 +55,7 @@ export default function GameChart({
   bidSize,
   zoom = 1,
   realMode = false,
+  ambient = false,
   onPrice,
   onBalanceDelta,
   onBet,
@@ -65,6 +66,7 @@ export default function GameChart({
   bidSize: number;
   zoom?: number;
   realMode?: boolean;
+  ambient?: boolean;
   onPrice: (p: number) => void;
   onBalanceDelta: (d: number) => void;
   onBet: (b: { stake: number; mult: number; status: BetStatus }) => void;
@@ -82,6 +84,8 @@ export default function GameChart({
   onZoomRef.current = onZoom;
   const realModeRef = useRef(realMode);
   realModeRef.current = realMode;
+  const ambientRef = useRef(ambient);
+  ambientRef.current = ambient;
   const onRealTapRef = useRef(onRealTap);
   onRealTapRef.current = onRealTap;
   const balanceRef = useRef(getBalance);
@@ -128,11 +132,16 @@ export default function GameChart({
 
     const plotTop = PAD_TOP;
     const plotBot = () => H - PAD_BOTTOM;
+    // ambient (home backdrop): push "now" right so the line fills the left, and
+    // scroll faster.
+    const NW = () => (ambientRef.current ? 0.84 : NOW_X);
+    const VP = () => (ambientRef.current ? VIEW_PAST_MS * 0.5 : VIEW_PAST_MS);
+    const VF = () => (ambientRef.current ? VIEW_FUTURE_MS * 0.5 : VIEW_FUTURE_MS);
     function xForTime(t: number, now: number) {
-      const nowX = W * NOW_X;
+      const nowX = W * NW();
       const z = zoomRef.current;
-      if (t <= now) return nowX + ((t - now) / (VIEW_PAST_MS / z)) * nowX;
-      return nowX + ((t - now) / (VIEW_FUTURE_MS / z)) * (W - nowX);
+      if (t <= now) return nowX + ((t - now) / (VP() / z)) * nowX;
+      return nowX + ((t - now) / (VF() / z)) * (W - nowX);
     }
     function yForPrice(p: number) {
       const bot = plotBot();
@@ -160,11 +169,12 @@ export default function GameChart({
     function stepPrice(now: number) {
       while (now - lastTick >= TICK_MS) {
         lastTick += TICK_MS;
-        price += price * VOL_PER_SQRT_SEC * Math.sqrt(dt) * gaussian() + (anchor - price) * 0.0006;
+        const vol = VOL_PER_SQRT_SEC * (ambientRef.current ? 2.4 : 1);
+        price += price * vol * Math.sqrt(dt) * gaussian() + (anchor - price) * 0.0006;
         history.push({ t: lastTick, p: price });
         onPrice(price);
       }
-      const cutoff = now - VIEW_PAST_MS - 2000;
+      const cutoff = now - VP() - 2000;
       while (history.length > 2 && history[0].t < cutoff) history.shift();
     }
 
@@ -174,7 +184,7 @@ export default function GameChart({
         columns.push({ t: first, resolved: false, winRow: 0, winPrice: 0 });
       }
       const lastT = columns[columns.length - 1].t;
-      const horizon = now + VIEW_FUTURE_MS + COL_INTERVAL_MS;
+      const horizon = now + VF() + COL_INTERVAL_MS;
       for (let t = lastT + COL_INTERVAL_MS; t <= horizon; t += COL_INTERVAL_MS) {
         columns.push({ t, resolved: false, winRow: 0, winPrice: 0 });
       }
@@ -210,7 +220,7 @@ export default function GameChart({
     }
 
     function cellAt(px: number, py: number, now: number): { colT: number; band: number } | null {
-      const nowX = W * NOW_X;
+      const nowX = W * NW();
       if (px < nowX) return null;
       for (const c of columns) {
         if (c.resolved) continue;
@@ -291,7 +301,7 @@ export default function GameChart({
       let lo = price;
       let hi = price;
       for (const h of history) {
-        if (h.t < now - VIEW_PAST_MS) continue;
+        if (h.t < now - VP()) continue;
         if (h.p < lo) lo = h.p;
         if (h.p > hi) hi = h.p;
       }
@@ -312,7 +322,7 @@ export default function GameChart({
       renderPrice += (price - renderPrice) * 0.16; // smooth the leading edge
 
       ctx.clearRect(0, 0, W, H);
-      const nowX = W * NOW_X;
+      const nowX = W * NW();
       const lockX = xForTime(now + MIN_BET_HORIZON * 1000, now);
       const firstBand = bandForPrice(range.min) - 1;
       const lastBand = bandForPrice(range.max) + 1;
@@ -366,7 +376,7 @@ export default function GameChart({
       }
 
       // ---- locked zone (< MIN_BET_HORIZON s) ----
-      if (lockX > nowX) {
+      if (lockX > nowX && !ambientRef.current) {
         const pulse = 0.5 + 0.5 * Math.sin(now / 300);
         const ph = (now / 24) % 18; // moving stripes
         const top = plotTop;
@@ -474,22 +484,39 @@ export default function GameChart({
       const pts: { x: number; y: number }[] = [];
       for (const pt of history) pts.push({ x: xForTime(pt.t, now), y: yForPrice(pt.p) });
       pts.push({ x: lx, y: ly }); // smoothed leading edge
-      ctx.lineWidth = 2.2;
+      const amb = ambientRef.current;
       ctx.lineJoin = "round";
       ctx.lineCap = "round";
-      ctx.strokeStyle = "#39ff14";
-      ctx.shadowColor = "rgba(57,255,20,0.7)";
-      ctx.shadowBlur = 12;
-      if (pts.length >= 2) {
+      const tracePath = () => {
         ctx.beginPath();
         ctx.moveTo(pts[0].x, pts[0].y);
         for (let i = 1; i < pts.length - 1; i++) {
-          const mx = (pts[i].x + pts[i + 1].x) / 2;
-          const my = (pts[i].y + pts[i + 1].y) / 2;
-          ctx.quadraticCurveTo(pts[i].x, pts[i].y, mx, my);
+          ctx.quadraticCurveTo(pts[i].x, pts[i].y, (pts[i].x + pts[i + 1].x) / 2, (pts[i].y + pts[i + 1].y) / 2);
         }
         ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
-        ctx.stroke();
+      };
+      if (pts.length >= 2) {
+        if (amb) {
+          // bloom pass (wide, soft) then a bright animated core
+          ctx.strokeStyle = "rgba(57,255,20,0.16)";
+          ctx.lineWidth = 9;
+          ctx.shadowColor = "rgba(57,255,20,0.9)";
+          ctx.shadowBlur = 26;
+          tracePath();
+          ctx.stroke();
+          ctx.strokeStyle = `rgba(160,255,120,${(0.9 + 0.1 * Math.sin(now / 120)).toFixed(2)})`;
+          ctx.lineWidth = 3;
+          ctx.shadowBlur = 18;
+          tracePath();
+          ctx.stroke();
+        } else {
+          ctx.strokeStyle = "#39ff14";
+          ctx.shadowColor = "rgba(57,255,20,0.7)";
+          ctx.shadowBlur = 12;
+          ctx.lineWidth = 2.2;
+          tracePath();
+          ctx.stroke();
+        }
       }
       ctx.shadowBlur = 0;
       const pulse = 6 + 3 * Math.sin(now / 220);
