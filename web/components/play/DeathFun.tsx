@@ -41,9 +41,9 @@ export default function DeathFun() {
   const value = +(death.stake * death.multiplier).toFixed(2);
   const nextMult = multiplierAfter(death.picks + 1, death.bombs, total);
 
-  // dynamic tile size — bigger boards so even ULTRA stays clickable
-  const gap = death.dim > 14 ? 3 : death.dim > 8 ? 5 : 8;
-  const tilePx = Math.max(22, Math.min(74, Math.floor((720 - (death.dim - 1) * gap) / death.dim)));
+  // fixed tile size across all difficulties (NORMAL's size); big boards scroll
+  const gap = 8;
+  const tilePx = 64;
   const animate = death.dim <= 13;
 
   const start = () => {
@@ -216,7 +216,7 @@ export default function DeathFun() {
 
       {/* board */}
       <main className="relative grid min-w-0 flex-1 place-items-center overflow-auto p-6">
-        <LiveFeed className="absolute left-3 top-3 z-20 hidden w-56 lg:block" />
+        <LiveFeed className="absolute bottom-3 left-3 top-3 z-20 hidden w-56 overflow-hidden lg:block" />
         <div className="absolute inset-x-0 top-4 flex flex-wrap items-center justify-center gap-x-6 gap-y-1 font-mono text-[12px]">
           <Tag label="SKULLS" value={`${death.bombs}`} cls="text-magenta" />
           <span className="flex items-center gap-1.5">

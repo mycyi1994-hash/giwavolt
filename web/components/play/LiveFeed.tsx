@@ -38,10 +38,10 @@ export default function LiveFeed({ className = "" }: { className?: string }) {
 
   useEffect(() => {
     const tick = () => {
-      setItems((x) => [gen(), ...x].slice(0, 11));
-      timer.current = setTimeout(tick, 380 + Math.random() * 700);
+      setItems((x) => [gen(), ...x].slice(0, 30));
+      timer.current = setTimeout(tick, 300 + Math.random() * 600);
     };
-    setItems(Array.from({ length: 8 }, gen));
+    setItems(Array.from({ length: 20 }, gen));
     tick();
     return () => clearTimeout(timer.current);
   }, []);
@@ -54,7 +54,7 @@ export default function LiveFeed({ className = "" }: { className?: string }) {
       <div className="flex flex-col gap-1">
         {items.map((e, i) => {
           const m = META[e.kind];
-          const fade = 1 - i / 13;
+          const fade = Math.max(0.18, 1 - i / 34);
           return (
             <div
               key={e.id}

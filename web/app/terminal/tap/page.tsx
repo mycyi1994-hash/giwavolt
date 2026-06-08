@@ -73,7 +73,7 @@ export default function TapTradingPage() {
           <div className={`panel clip absolute left-4 top-3 z-10 px-3 py-1.5 font-mono text-[11px] tracking-wider ${real ? "text-magenta" : "text-cyan"}`}>
             {real ? "◆ REAL — deposited balance" : "◆ DEMO — play money"}
           </div>
-          <LiveFeed className="absolute left-3 top-12 z-10 hidden w-56 md:block" />
+          <LiveFeed className="absolute bottom-4 left-3 top-12 z-10 hidden w-56 overflow-hidden md:block" />
 
           <div className="panel clip absolute right-4 top-3 z-10 flex items-center gap-3 px-3 py-1.5 font-mono text-[11px]">
             <Stat label="LIVE" value={String(stats.live)} cls="text-magenta" />

@@ -166,23 +166,28 @@ export default function GameChart({
     }
     const dt = TICK_MS / 1000;
 
-    // backfill history so the chart is already full of line on first paint.
-    // Keep it tight around the anchor (strong reversion) so the whole line fits
-    // the visible band instead of drifting off-screen.
+    // backfill history so the chart is already full of line on first paint —
+    // same volatility as the live walk (no flat baseline), and fit the initial
+    // range to the backfilled prices so nothing clips off-screen.
     (() => {
       const n0 = Date.now();
       const steps = Math.floor(VIEW_PAST_MS / TICK_MS);
       const back: { t: number; p: number }[] = [];
       let p = anchor;
+      let mn = anchor;
+      let mx = anchor;
       for (let i = steps; i >= 0; i--) {
         back.unshift({ t: n0 - i * TICK_MS, p });
-        p += p * VOL_PER_SQRT_SEC * Math.sqrt(dt) * 0.5 * gaussian() + (anchor - p) * 0.05;
+        p += p * VOL_PER_SQRT_SEC * Math.sqrt(dt) * gaussian() + (anchor - p) * 0.004;
+        mn = Math.min(mn, p);
+        mx = Math.max(mx, p);
       }
       history.length = 0;
       for (const b of back) history.push(b);
-      price = anchor + (back[back.length - 1].p - anchor) * 0.4;
+      price = back[back.length - 1].p;
       renderPrice = price;
-      range = { min: price - (MIN_ROWS * step) / 2, max: price + (MIN_ROWS * step) / 2 };
+      const half = Math.min(Math.max(price - mn, mx - price, (MIN_ROWS * step) / 2) + step * 2, (MAX_ROWS * step) / 2);
+      range = { min: price - half, max: price + half };
     })();
 
     let lastTick = Date.now();
@@ -409,78 +414,84 @@ export default function GameChart({
         }
       }
 
-      // ---- locked zone (< MIN_BET_HORIZON s) ----
+      // ---- locked zone (< MIN_BET_HORIZON s) — full neon spectacle ----
       if (lockX > nowX && !ambientRef.current) {
-        const pulse = 0.5 + 0.5 * Math.sin(now / 300);
-        const ph = (now / 24) % 18; // moving stripes
+        const pulse = 0.5 + 0.5 * Math.sin(now / 280);
+        const ph = (now / 16) % 16;
         const top = plotTop;
         const bot = plotBot();
-        const m = 7; // safe margin inset (left/right + top/bottom)
+        const m = 7;
         const zx0 = nowX + m;
         const zx1 = lockX - m;
         const cx = (nowX + lockX) / 2;
+        const PAL = [[0, 229, 255], [255, 43, 214], [57, 255, 20], [255, 210, 63], [157, 77, 255]];
+        const colAt = (k: number) => PAL[((Math.floor(k) % PAL.length) + PAL.length) % PAL.length];
+        const rgb = (c: number[], a = 1) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
 
-        // soft gradient fill inside the band
-        const grad = ctx.createLinearGradient(0, top, 0, bot);
-        grad.addColorStop(0, "rgba(255,43,214,0.05)");
-        grad.addColorStop(0.5, "rgba(12,6,20,0.66)");
-        grad.addColorStop(1, "rgba(255,43,214,0.05)");
         ctx.save();
         ctx.beginPath();
         ctx.rect(zx0, top, zx1 - zx0, bot - top);
         ctx.clip();
+        // shifting cyan↔magenta gradient fill
+        const a = 0.5 + 0.5 * Math.sin(now / 600);
+        const grad = ctx.createLinearGradient(zx0, top, zx1, bot);
+        grad.addColorStop(0, `rgba(0,229,255,${(0.06 + 0.07 * a).toFixed(3)})`);
+        grad.addColorStop(0.5, "rgba(14,6,22,0.6)");
+        grad.addColorStop(1, `rgba(255,43,214,${(0.06 + 0.07 * (1 - a)).toFixed(3)})`);
         ctx.fillStyle = grad;
         ctx.fillRect(zx0, top, zx1 - zx0, bot - top);
-        // animated diagonal sheen stripes
-        ctx.strokeStyle = `rgba(0,229,255,${(0.05 + pulse * 0.08).toFixed(3)})`;
+        // fast multi-colour diagonal sheen stripes
         ctx.lineWidth = 3;
-        for (let x = zx0 - 80 + ph; x < zx1 + 80; x += 18) {
+        for (let x = zx0 - 90 + ph; x < zx1 + 90; x += 16) {
+          ctx.strokeStyle = rgb(colAt(x / 16), 0.07 + pulse * 0.1);
           ctx.beginPath();
           ctx.moveTo(x, top);
-          ctx.lineTo(x + 80, bot);
+          ctx.lineTo(x + 90, bot);
           ctx.stroke();
         }
+        // vertical sweeping highlight
+        const sweepY = top + ((now / 11) % (bot - top));
+        const sg = ctx.createLinearGradient(0, sweepY - 44, 0, sweepY + 44);
+        sg.addColorStop(0, "rgba(255,255,255,0)");
+        sg.addColorStop(0.5, "rgba(255,255,255,0.12)");
+        sg.addColorStop(1, "rgba(255,255,255,0)");
+        ctx.fillStyle = sg;
+        ctx.fillRect(zx0, sweepY - 44, zx1 - zx0, 88);
         ctx.restore();
 
-        // inset neon frame (the "safe margin" framing)
-        ctx.strokeStyle = `rgba(255,43,214,${(0.55 + pulse * 0.4).toFixed(3)})`;
-        ctx.shadowColor = "rgba(255,43,214,0.9)";
-        ctx.shadowBlur = 10 + pulse * 16;
-        ctx.lineWidth = 2;
-        roundRect(ctx, zx0, top + m, zx1 - zx0, bot - top - 2 * m, 8);
-        ctx.stroke();
-        ctx.shadowBlur = 0;
-
-        // both edges get a bright neon rail
-        ctx.strokeStyle = `rgba(0,229,255,${(0.4 + pulse * 0.4).toFixed(3)})`;
-        ctx.shadowColor = "rgba(0,229,255,0.8)";
-        ctx.shadowBlur = 8 + pulse * 10;
-        ctx.lineWidth = 2;
-        for (const ex of [zx0, zx1]) {
-          ctx.beginPath();
-          ctx.moveTo(ex, top + m);
-          ctx.lineTo(ex, bot - m);
+        // double pulsing colour-cycling frame
+        for (const [w, blur, al] of [[3, 18, 0.5], [1.5, 8, 0.9]]) {
+          const fc = colAt(now / 300);
+          ctx.strokeStyle = rgb(fc, al * (0.6 + pulse * 0.4));
+          ctx.shadowColor = rgb(fc, 0.9);
+          ctx.shadowBlur = blur + pulse * 12;
+          ctx.lineWidth = w;
+          roundRect(ctx, zx0, top + m, zx1 - zx0, bot - top - 2 * m, 8);
           ctx.stroke();
         }
         ctx.shadowBlur = 0;
 
-        // big vertical "LOCKED" — one bold letter per line, glowing
+        // big vertical "LOCKED" — letters cycle through neon colours
         const letters = "LOCKED".split("");
-        const lh = Math.min(56, (bot - top - 3 * m) / (letters.length + 1));
+        const lh = Math.min(60, (bot - top - 3 * m) / (letters.length + 1));
         const startY = (top + bot) / 2 - (letters.length * lh) / 2;
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        ctx.font = `900 ${Math.round(lh * 0.9)}px var(--font-display, sans-serif)`;
-        ctx.shadowColor = "rgba(255,43,214,1)";
+        ctx.font = `900 ${Math.round(lh * 0.92)}px var(--font-display, sans-serif)`;
         letters.forEach((ch, i) => {
-          ctx.shadowBlur = 16 + pulse * 16;
-          ctx.fillStyle = `rgba(255,${Math.round(110 + pulse * 90)},235,1)`;
+          const c = colAt(i + now / 280);
+          ctx.shadowColor = rgb(c, 1);
+          ctx.shadowBlur = 18 + pulse * 18;
+          ctx.lineWidth = Math.max(2, lh * 0.06);
+          ctx.strokeStyle = "rgba(6,6,14,0.6)";
+          ctx.strokeText(ch, cx, startY + i * lh);
+          ctx.fillStyle = rgb(c);
           ctx.fillText(ch, cx, startY + i * lh);
         });
         ctx.shadowBlur = 0;
-        ctx.font = `800 ${Math.round(lh * 0.32)}px var(--font-display, sans-serif)`;
-        ctx.fillStyle = "rgba(0,229,255,0.95)";
-        ctx.fillText("TOO LATE", cx, startY + letters.length * lh + lh * 0.1);
+        ctx.font = `800 ${Math.round(lh * 0.34)}px var(--font-display, sans-serif)`;
+        ctx.fillStyle = "rgba(255,255,255,0.92)";
+        ctx.fillText("TOO LATE", cx, startY + letters.length * lh + lh * 0.15);
       }
 
       // ---- active bet markers ----

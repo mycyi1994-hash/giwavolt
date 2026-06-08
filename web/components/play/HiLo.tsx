@@ -165,7 +165,7 @@ export default function HiLo() {
       </aside>
 
       <main className="relative grid min-w-0 flex-1 place-items-center overflow-auto p-6">
-        <LiveFeed className="absolute left-3 top-3 z-20 hidden w-56 lg:block" />
+        <LiveFeed className="absolute bottom-3 left-3 top-3 z-20 hidden w-56 overflow-hidden lg:block" />
 
         <div className="flex flex-col items-center gap-5">
           {/* stats */}
