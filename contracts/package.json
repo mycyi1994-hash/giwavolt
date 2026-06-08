@@ -6,7 +6,8 @@
     "compile": "hardhat compile",
     "test": "hardhat test",
     "deploy:giwa": "hardhat run scripts/deploy.ts --network giwaSepolia",
-    "deploy:local": "hardhat run scripts/deploy.ts --network hardhat"
+    "deploy:local": "hardhat run scripts/deploy.ts --network hardhat",
+    "e2e": "hardhat run scripts/e2e.ts --network hardhat"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",

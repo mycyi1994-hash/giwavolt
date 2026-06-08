@@ -71,26 +71,45 @@ lose:   balance unchanged;    lockedLiability -= payout        (house keeps stak
 freeBankroll = balance - lockedLiability
 ```
 
-## Web — multiplier model
+## Multiplier model — exact fair odds minus a 7% house edge
 
-The on-chain contract accepts *any* committed grid. The web/operator computes a
-**gamified ladder** (`web/lib/grid.ts`): cells near the line ≈ `1.3x`, growing
-with vertical distance `n` (in bands) and time horizon `h`:
+The on-chain contract accepts *any* committed grid. The web and the round
+builder (`web/lib/grid.ts` ≡ `contracts/scripts/grid.ts`) price each cell with
+the **exact** probability the price lands in that band, under a driftless
+Gaussian random walk `terminal ~ Normal(price, σ)`, `σ = VOL · price · √h`:
 
 ```
-multiplier = clamp(MIN + A · n^1.6 · (0.6 + 0.12·h),  1.3x,  30x)
+prob       = Φ(hi/σ) − Φ(lo/σ)          // catch-all top/bottom bands use ±∞
+multiplier = (1 − HOUSE_EDGE) / prob     // HOUSE_EDGE = 0.07
 ```
 
-This produces the reference look — the band hugging the line is cheapest, the
-far corners reach the cap — while the house edge is enforced on-chain by the
-committed grid + bankroll limits.
+Crucially we **never clamp** a multiplier (clamping distorts the edge). Instead
+a cell is *offered* only when its fair price lands in `(1x, 30x]`; too-likely
+cells (≤1x) and too-unlikely cells (>30x) are simply not bettable. So every
+offered cell pays exactly `(1 − edge)/prob`, the expected value of every tap is
+`1 − edge`, and the house keeps **exactly 7%** of volume on average. Visually
+this carves the grid into a **probability cone** that widens with time.
+
+Because the demo's price simulation uses the *same* `VOL`, the realised edge in
+the browser converges to 7% too. The on-chain proof lives in
+`contracts/scripts/e2e.ts`:
+
+```
+npx hardhat run scripts/e2e.ts --network hardhat
+# → analytical edge (500k Monte-Carlo) ≈ 7.1%
+#   realised on-chain edge over 12 independent price paths (~1,400 settled bets)
+#   liability unwinds to exactly 0; bankroll accounting balances
+```
 
 ## Status
 
-- ✅ `SlideGame.sol` + tests (`game/contracts`)
+- ✅ `SlideGame.sol` + unit tests (`game/contracts`)
+- ✅ 7% house-edge multiplier model, shared by web + round builder
+- ✅ On-chain e2e: full lifecycle over many paths, edge verified (`scripts/e2e.ts`)
 - ✅ Web UI/UX, playable in client-side **demo mode** (`game/web`)
-- ⏳ Wire the web to the deployed contract (wagmi reads/writes)
+- ✅ Wallet connect (RainbowKit + wagmi, Giwa Sepolia)
 - ⏳ Oracle/round bot: open rounds, post Upbit prices per column, settle bets
+- ⏳ Wire the web tap → on-chain `placeBet`/`settleBet` transactions
 - ⏳ Indexer for round/grid/bet history
 
 ## v2 ideas

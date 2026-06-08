@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { cellMultiplier, multIntensity } from "@/lib/grid";
+import { cellMultiplier, multIntensity, VOL_PER_SQRT_SEC } from "@/lib/grid";
 import { mult as fmtMult, money } from "@/lib/format";
 
 // ---- engine tuning -------------------------------------------------------
@@ -11,6 +11,7 @@ const NOW_X = 0.56; // horizontal position of the "now" line (0..1)
 const COL_INTERVAL_MS = 3_400; // time between grid columns
 const STEP_PCT = 0.00058; // band height as a fraction of price
 const MIN_ROWS = 16; // minimum vertical bands kept in view
+const MAX_ROWS = 24; // maximum vertical bands (keeps cells readable on big moves)
 const TICK_MS = 180; // price sim tick
 const PAD_TOP = 16;
 const PAD_BOTTOM = 28;
@@ -62,7 +63,6 @@ export default function GameChart({
     const anchor = 1673.49; // anchor price defining the fixed band ladder
     const step = anchor * STEP_PCT;
     let price = anchor;
-    let drift = 0;
     const history: { t: number; p: number }[] = [{ t: Date.now(), p: price }];
     const columns: Column[] = [];
     const bets: Bet[] = [];
@@ -109,14 +109,31 @@ export default function GameChart({
     }
 
     // ---- price simulation ----
+    // Driftless Gaussian random walk with the SAME volatility the multiplier
+    // model assumes (VOL_PER_SQRT_SEC), so the realised house edge converges to
+    // HOUSE_EDGE. A tiny pull toward the anchor keeps the line on screen over
+    // long sessions without materially changing short-horizon volatility.
+    let spare: number | null = null;
+    function gaussian(): number {
+      if (spare !== null) {
+        const v = spare;
+        spare = null;
+        return v;
+      }
+      let u = 0;
+      let v = 0;
+      while (u === 0) u = Math.random();
+      while (v === 0) v = Math.random();
+      const r = Math.sqrt(-2 * Math.log(u));
+      spare = r * Math.sin(2 * Math.PI * v);
+      return r * Math.cos(2 * Math.PI * v);
+    }
+    const dt = TICK_MS / 1000;
     let lastTick = Date.now();
     function stepPrice(now: number) {
       while (now - lastTick >= TICK_MS) {
         lastTick += TICK_MS;
-        // mean-reverting random walk with occasional momentum
-        drift = drift * 0.94 + (Math.random() - 0.5) * step * 0.5;
-        const revert = (anchor - price) * 0.0015;
-        price += drift * 0.5 + revert + (Math.random() - 0.5) * step * 0.6;
+        price += price * VOL_PER_SQRT_SEC * Math.sqrt(dt) * gaussian() + (anchor - price) * 0.0006;
         history.push({ t: lastTick, p: price });
         onPrice(price);
       }
@@ -195,8 +212,9 @@ export default function GameChart({
       const now = Date.now();
       const h = (colT - now) / 1000;
       if (h <= 0.6) return; // too late
-      const d = Math.abs(bandCenter(band) - price);
-      const m = cellMultiplier(d, h, step, price);
+      const lo = bandLow(band) - price;
+      const m = cellMultiplier(lo, lo + step, h, price);
+      if (m <= 0) return; // cell not offered
       bets.push({ id: nextBetId++, colT, band, stake, mult: m, status: "live", bornAt: now });
       onBalanceDelta(-stake);
       onBet({ stake, mult: m, status: "live" });
@@ -231,7 +249,10 @@ export default function GameChart({
         if (h.p > hi) hi = h.p;
       }
       const center = (lo + hi) / 2;
-      const half = Math.max((hi - lo) / 2 + step * 2, (MIN_ROWS * step) / 2);
+      const half = Math.min(
+        Math.max((hi - lo) / 2 + step * 2, (MIN_ROWS * step) / 2),
+        (MAX_ROWS * step) / 2
+      );
       const tMin = center - half;
       const tMax = center + half;
       // ease toward target
@@ -280,8 +301,9 @@ export default function GameChart({
           const yBot = yForPrice(bandLow(b));
           const ch = yBot - yTop;
           if (ch < 6) continue;
-          const d = Math.abs(bandCenter(b) - price);
-          const m = cellMultiplier(d, h, step, price);
+          const lo = bandLow(b) - price;
+          const m = cellMultiplier(lo, lo + step, h, price);
+          if (m <= 0) continue; // cell not offered
           const inten = multIntensity(m);
           const isHover = hover && hover.colT === c.t && hover.band === b;
           // cell fill

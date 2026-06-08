@@ -33,7 +33,7 @@ const config: HardhatUserConfig = {
     artifacts: "./artifacts",
   },
   networks: {
-    hardhat: {},
+    hardhat: { blockGasLimit: 60_000_000 },
     giwaSepolia: {
       url: process.env.GIWA_RPC_URL ?? "https://sepolia-rpc.giwa.io",
       chainId: 91342,
