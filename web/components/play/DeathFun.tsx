@@ -18,6 +18,7 @@ export default function DeathFun() {
   const [stake, setStake] = useState(5);
   const [custom, setCustom] = useState("");
   const [shake, setShake] = useState(false);
+  const [burst, setBurst] = useState(false);
 
   // ensure an idle board exists; reroll when mode changes while idle
   useEffect(() => {
@@ -30,6 +31,22 @@ export default function DeathFun() {
   }, []);
 
   if (!death) return null;
+
+  // Death Fun has no on-chain contract yet — Real mode is gated.
+  if (mode === "real") {
+    return (
+      <div className="grid h-full place-items-center p-6">
+        <div className="panel clip flex max-w-md flex-col items-center gap-3 px-8 py-7 text-center">
+          <Skull size={28} className="text-magenta" />
+          <div className="font-display text-lg font-bold tracking-wide text-magenta neon-magenta">REAL — COMING SOON</div>
+          <p className="font-sans text-[13px] text-muted">
+            On-chain Death Fun (real ETH) is in the works. Switch to <span className="text-cyan">DEMO</span> to play now.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   const playing = death.status === "playing";
   const value = +(death.stake * death.multiplier).toFixed(2);
   const nextMult = multiplierAfter(death.picks + 1, death.bombs);
@@ -65,6 +82,8 @@ export default function DeathFun() {
     adjust(death.mode, cashout);
     setDeath({ ...death, tiles: revealAll(death), status: "stopped", cashout });
     toast.push("cash", `CASHED OUT +${usdc(cashout)}`, `${death.multiplier.toFixed(2)}× · ${death.picks} safe`);
+    setBurst(true);
+    setTimeout(() => setBurst(false), 1000);
   };
   const stageReset = () => {
     if (playing) return;
@@ -78,9 +97,9 @@ export default function DeathFun() {
   };
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full flex-col md:flex-row">
       {/* controls */}
-      <aside className="flex w-[270px] shrink-0 flex-col gap-5 border-r border-line bg-ink/40 p-4">
+      <aside className="flex w-full shrink-0 flex-col gap-5 border-b border-line bg-ink/40 p-4 md:w-[270px] md:border-b-0 md:border-r">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 font-display text-sm font-bold tracking-wide text-magenta">
             <Skull size={16} /> DEATH FUN
@@ -192,10 +211,11 @@ export default function DeathFun() {
           {playing && <Tag label="NEXT" value={`${nextMult.toFixed(2)}×`} cls="text-faint" />}
         </div>
 
-        <div className="flex flex-col items-center gap-4">
+        <div className="relative flex flex-col items-center gap-4">
+          {burst && <Burst />}
           <div className={`grid grid-cols-5 gap-2.5 ${shake ? "animate-shake" : ""}`}>
             {death.tiles.map((t, i) => (
-              <Tile key={`${i}-${t}`} t={t} active={playing} onClick={() => reveal(i)} />
+              <Tile key={`${i}-${t}`} t={t} active={playing} preview={playing ? `${nextMult.toFixed(2)}×` : ""} onClick={() => reveal(i)} />
             ))}
           </div>
 
@@ -217,7 +237,7 @@ export default function DeathFun() {
   );
 }
 
-function Tile({ t, active, onClick }: { t: string; active: boolean; onClick: () => void }) {
+function Tile({ t, active, preview, onClick }: { t: string; active: boolean; preview: string; onClick: () => void }) {
   const base = "grid h-16 w-16 place-items-center clip border transition";
   if (t === "skull")
     return (
@@ -235,12 +255,44 @@ function Tile({ t, active, onClick }: { t: string; active: boolean; onClick: () 
     <button
       onClick={onClick}
       disabled={!active}
-      className={`${base} border-line bg-ink-2 text-faint ${
+      className={`${base} group relative border-line bg-ink-2 text-faint ${
         active ? "cursor-pointer hover:border-cyan hover:text-cyan hover:bg-cyan/10" : "cursor-default"
       }`}
     >
-      <span className="font-display text-lg font-black opacity-40">?</span>
+      <span className="font-display text-lg font-black opacity-40 transition group-hover:opacity-0">?</span>
+      {active && preview && (
+        <span className="tabular absolute inset-0 grid place-items-center font-mono text-[12px] font-bold text-cyan opacity-0 transition group-hover:opacity-100">
+          {preview}
+        </span>
+      )}
     </button>
+  );
+}
+
+function Burst() {
+  const dots = Array.from({ length: 14 });
+  return (
+    <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center">
+      {dots.map((_, i) => {
+        const ang = (i / dots.length) * Math.PI * 2;
+        const dist = 90 + (i % 3) * 26;
+        const col = i % 2 ? "#39ff14" : "#00e5ff";
+        return (
+          <span
+            key={i}
+            className="absolute h-2 w-2 rounded-full"
+            style={{
+              background: col,
+              boxShadow: `0 0 10px ${col}`,
+              animation: "burst 1s ease-out forwards",
+              // @ts-expect-error custom props consumed by the keyframe
+              "--dx": `${Math.cos(ang) * dist}px`,
+              "--dy": `${Math.sin(ang) * dist}px`,
+            }}
+          />
+        );
+      })}
+    </div>
   );
 }
 

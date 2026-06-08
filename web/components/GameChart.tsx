@@ -50,18 +50,22 @@ function cellRGB(t: number): [number, number, number] {
 export default function GameChart({
   bidSize,
   zoom = 1,
+  realMode = false,
   onPrice,
   onBalanceDelta,
   onBet,
   onZoom,
+  onRealTap,
   getBalance,
 }: {
   bidSize: number;
   zoom?: number;
+  realMode?: boolean;
   onPrice: (p: number) => void;
   onBalanceDelta: (d: number) => void;
   onBet: (b: { stake: number; mult: number; status: BetStatus }) => void;
   onZoom?: (factor: number) => void;
+  onRealTap?: (mult: number, sx: number, sy: number) => void;
   getBalance: () => number;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -72,6 +76,10 @@ export default function GameChart({
   zoomRef.current = zoom;
   const onZoomRef = useRef(onZoom);
   onZoomRef.current = onZoom;
+  const realModeRef = useRef(realMode);
+  realModeRef.current = realMode;
+  const onRealTapRef = useRef(onRealTap);
+  onRealTapRef.current = onRealTap;
   const balanceRef = useRef(getBalance);
   balanceRef.current = getBalance;
 
@@ -215,6 +223,17 @@ export default function GameChart({
       const now = Date.now();
       const cell = cellAt(px, py, now);
       if (!cell) return;
+
+      // REAL mode: instant on-chain bet on the tapped cell's multiplier
+      if (realModeRef.current) {
+        const h = (cell.colT - now) / 1000;
+        if (h < MIN_BET_HORIZON) return;
+        const lo = bandLow(cell.band) - price;
+        const m = cellMultiplier(lo, lo + step, h, price);
+        if (m <= 0) return;
+        onRealTapRef.current?.(m, px, py);
+        return;
+      }
 
       // toggle-cancel an existing live bet on this cell
       const existing = bets.find((b) => b.status === "live" && b.colT === cell.colT && b.band === cell.band);

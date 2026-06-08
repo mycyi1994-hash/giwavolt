@@ -4,11 +4,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { Zap, Home, LineChart, Skull, Trophy, User } from "lucide-react";
-import { usePlay } from "@/components/play/PlayProvider";
 import ModeToggle from "@/components/play/ModeToggle";
 import SoundToggle from "@/components/play/SoundToggle";
 import AnimatedNumber from "@/components/ui/AnimatedNumber";
-import { usdc, krw } from "@/lib/money";
+import { useFunds } from "@/lib/useFunds";
 
 const TABS = [
   { href: "/terminal", label: "Home", icon: Home },
@@ -19,8 +18,7 @@ const TABS = [
 
 export default function TopNav() {
   const pathname = usePathname();
-  const { mode, balance } = usePlay();
-  const bal = balance[mode];
+  const funds = useFunds();
 
   return (
     <header className="relative z-30 flex h-14 shrink-0 items-center gap-3 border-b border-line bg-ink/70 px-4 backdrop-blur">
@@ -57,8 +55,12 @@ export default function TopNav() {
       {/* right cluster: fund · mode · wallet · profile */}
       <div className="ml-auto flex items-center gap-2.5">
         <div className="hidden flex-col items-end leading-none md:flex">
-          <AnimatedNumber value={bal} format={(n) => usdc(n)} className="tabular text-[13px] font-bold text-cyan" />
-          <span className="tabular text-[10px] text-faint">{krw(bal)}</span>
+          <AnimatedNumber
+            value={funds.amount}
+            format={(n) => (funds.symbol === "ETH" ? `${n.toFixed(4)} ETH` : `${n.toLocaleString("en-US", { maximumFractionDigits: 2 })} USDC`)}
+            className="tabular text-[13px] font-bold text-cyan"
+          />
+          <span className="tabular text-[10px] text-faint">{funds.fmtSub}</span>
         </div>
         <ModeToggle />
         <SoundToggle />
