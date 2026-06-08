@@ -177,7 +177,7 @@ export default function GameChart({
       let mn = anchor;
       let mx = anchor;
       for (let i = steps; i >= 0; i--) {
-        back.unshift({ t: n0 - i * TICK_MS, p });
+        back.push({ t: n0 - i * TICK_MS, p }); // chronological: oldest → newest
         p += p * VOL_PER_SQRT_SEC * Math.sqrt(dt) * gaussian() + (anchor - p) * 0.004;
         mn = Math.min(mn, p);
         mx = Math.max(mx, p);
