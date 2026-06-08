@@ -49,3 +49,73 @@ export function fmtVolume(n: number): string {
   if (n >= 1_000) return `$${(n / 1_000).toFixed(0)}K`;
   return `$${n}`;
 }
+
+// ---- order book + price history (deterministic mock) -------------------
+
+function mulberry32(a: number) {
+  return function () {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function seedOf(id: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 16777619);
+  return h >>> 0;
+}
+
+export type Level = { price: number; size: number };
+export type Book = { asks: Level[]; bids: Level[] };
+
+// YES order book: asks (sell YES) just above the mid, bids (buy YES) just below.
+export function genBook(m: Market): Book {
+  const rnd = mulberry32(seedOf(m.id) ^ m.yes);
+  const asks: Level[] = [];
+  const bids: Level[] = [];
+  let p = m.yes;
+  for (let i = 0; i < 9 && p < 99; i++) {
+    p = Math.min(99, p + 1 + Math.floor(rnd() * 2));
+    asks.push({ price: p, size: Math.round(40 + rnd() * 1200) });
+  }
+  p = m.yes;
+  for (let i = 0; i < 9 && p > 1; i++) {
+    p = Math.max(1, p - 1 - Math.floor(rnd() * 2));
+    bids.push({ price: p, size: Math.round(40 + rnd() * 1200) });
+  }
+  return { asks, bids };
+}
+
+// longer YES-price history for the detail chart
+export function genHistory(m: Market, n = 48): number[] {
+  const rnd = mulberry32(seedOf(m.id));
+  const out: number[] = [];
+  let v = Math.max(8, Math.min(92, m.yes - m.change * 2 - 6));
+  for (let i = 0; i < n - 1; i++) {
+    v += (rnd() - 0.5) * 6 + (m.yes - v) * 0.04;
+    out.push(Math.max(2, Math.min(98, v)));
+  }
+  out.push(m.yes);
+  return out;
+}
+
+// Walk the ask side for a market BUY of `shares`; returns avg price & slippage.
+export function marketBuy(book: Book, shares: number): { avg: number; filled: number; slippagePct: number } {
+  let remaining = shares;
+  let cost = 0;
+  let filled = 0;
+  const best = book.asks[0]?.price ?? 0;
+  for (const lvl of book.asks) {
+    if (remaining <= 0) break;
+    const take = Math.min(remaining, lvl.size);
+    cost += take * lvl.price;
+    filled += take;
+    remaining -= take;
+  }
+  const avg = filled > 0 ? cost / filled : best;
+  const slippagePct = best > 0 ? ((avg - best) / best) * 100 : 0;
+  return { avg, filled, slippagePct };
+}
