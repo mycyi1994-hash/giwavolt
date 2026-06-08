@@ -1,113 +1,80 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
-import Header from "@/components/Header";
-import SidePanel from "@/components/SidePanel";
-import BottomBar from "@/components/BottomBar";
-import GameChart, { type BetStatus } from "@/components/GameChart";
-import { money } from "@/lib/format";
+import { useRouter } from "next/navigation";
+import { ConnectButton } from "@rainbow-me/rainbowkit";
+import { Zap, Rocket, Terminal } from "lucide-react";
+import DiceHand from "@/components/landing/DiceHand";
+import { useWalletGate } from "@/lib/walletGate";
 
-export default function Page() {
-  const [balance, setBalance] = useState(100);
-  const [bid, setBid] = useState(0.9);
-  const [price, setPrice] = useState(1673.49);
-  const [stats, setStats] = useState({ live: 0, won: 0, profit: 0 });
+export default function Landing() {
+  const router = useRouter();
+  const { requireWallet } = useWalletGate();
 
-  const balanceRef = useRef(balance);
-  balanceRef.current = balance;
-
-  const onBalanceDelta = useCallback((d: number) => {
-    setBalance((b) => Math.max(0, +(b + d).toFixed(2)));
-  }, []);
-
-  const onBet = useCallback((b: { stake: number; mult: number; status: BetStatus }) => {
-    setStats((s) => {
-      switch (b.status) {
-        case "live":
-          return { ...s, live: s.live + 1 };
-        case "cancel":
-          return { ...s, live: Math.max(0, s.live - 1) };
-        case "won":
-          return {
-            live: Math.max(0, s.live - 1),
-            won: s.won + 1,
-            profit: +(s.profit + b.stake * (b.mult - 1)).toFixed(2),
-          };
-        case "lost":
-          return { ...s, live: Math.max(0, s.live - 1), profit: +(s.profit - b.stake).toFixed(2) };
-      }
-    });
-  }, []);
+  // any interaction requires a wallet first
+  const go = (path: string) => () => requireWallet(() => router.push(path));
 
   return (
-    <div className="flex h-screen flex-col">
-      <Header />
-      <div className="flex min-h-0 flex-1">
-        <SidePanel
-          balance={balance}
-          price={price}
-          bid={bid}
-          onBid={setBid}
-          onAddFunds={() => onBalanceDelta(100)}
-          onWithdraw={() => setBalance(0)}
-        />
+    <div className="flex h-screen flex-col overflow-hidden">
+      {/* top bar */}
+      <header className="flex h-14 shrink-0 items-center px-5">
+        <div className="flex items-center gap-2.5">
+          <div className="grid h-8 w-8 place-items-center bg-gradient-to-br from-cyan to-magenta text-[#06060e] clip animate-glow">
+            <Zap size={17} strokeWidth={2.6} />
+          </div>
+          <span className="font-display text-[16px] font-black tracking-[0.2em] text-txt neon-cyan">VOLT</span>
+        </div>
+        <div className="ml-auto">
+          <ConnectButton accountStatus="address" chainStatus="icon" showBalance={false} />
+        </div>
+      </header>
 
-        <main className="relative flex min-w-0 flex-1 flex-col">
-          {/* live stats */}
-          <div className="panel clip absolute right-4 top-3 z-10 flex items-center gap-3 px-3 py-1.5 font-mono text-[11px]">
-            <Stat label="LIVE" value={String(stats.live)} tone="magenta" />
-            <Sep />
-            <Stat label="WON" value={String(stats.won)} tone="cyan" />
-            <Sep />
-            <Stat
-              label="P&L"
-              value={(stats.profit >= 0 ? "+" : "") + money(stats.profit)}
-              tone={stats.profit > 0 ? "lime" : stats.profit < 0 ? "magenta" : "muted"}
-            />
+      {/* hero */}
+      <main className="grid min-h-0 flex-1 place-items-center px-6">
+        <div className="grid w-full max-w-5xl grid-cols-1 items-center gap-8 md:grid-cols-2">
+          {/* left: copy + CTAs */}
+          <div className="order-2 md:order-1">
+            <div className="mb-3 inline-flex items-center gap-2 border border-line bg-ink-2 px-3 py-1 font-mono text-[10px] tracking-[0.25em] text-cyan clip">
+              <span className="h-1.5 w-1.5 rounded-full bg-cyan animate-flicker" /> ON-CHAIN · GIWA SEPOLIA
+            </div>
+            <h1 className="font-display text-6xl font-black leading-[0.95] tracking-tight sm:text-7xl">
+              <span className="block text-txt neon-cyan">BET</span>
+              <span className="block text-magenta neon-magenta">FUN</span>
+            </h1>
+            <p className="mt-4 max-w-md font-sans text-[15px] leading-relaxed text-muted">
+              Tap the line. Dodge the skulls. Provably-fair, fully on-chain games settled in{" "}
+              <span className="text-cyan">USDC</span> &amp; <span className="text-lime">KRW</span> on GIWA.
+            </p>
+
+            <div className="mt-7 flex flex-wrap gap-3">
+              <button
+                onClick={go("/swap")}
+                className="btn-neon clip flex items-center gap-2 bg-cyan/10 px-6 py-3 font-display text-sm font-bold tracking-wide text-cyan"
+              >
+                <Rocket size={17} /> LAUNCH APP
+              </button>
+              <button
+                onClick={go("/terminal/tap")}
+                className="clip flex items-center gap-2 border border-magenta/60 bg-magenta/10 px-6 py-3 font-display text-sm font-bold tracking-wide text-magenta transition hover:bg-magenta/20"
+                style={{ boxShadow: "0 0 14px rgba(255,43,214,.25)" }}
+              >
+                <Terminal size={17} /> LAUNCH TERMINAL
+              </button>
+            </div>
+            <p className="mt-3 font-mono text-[11px] text-faint">
+              Connect a wallet to enter · Launch App → swap · Launch Terminal → games
+            </p>
           </div>
 
-          <div className="min-h-0 flex-1">
-            <GameChart
-              bidSize={bid}
-              onPrice={setPrice}
-              onBalanceDelta={onBalanceDelta}
-              onBet={onBet}
-              getBalance={() => balanceRef.current}
-            />
+          {/* right: art */}
+          <div className="order-1 flex justify-center md:order-2">
+            <DiceHand className="w-[320px] max-w-full drop-shadow-[0_0_40px_rgba(255,43,214,0.25)] sm:w-[400px]" />
           </div>
+        </div>
+      </main>
 
-          {/* corner chips */}
-          <div className="panel clip pointer-events-none absolute bottom-3 left-4 z-10 flex items-center gap-1.5 px-2.5 py-1 font-mono text-[11px]">
-            <span className="h-1.5 w-1.5 rounded-full bg-cyan" />
-            <span className="tabular text-cyan">{money(balance)}</span>
-          </div>
-          <div className="clip pointer-events-none absolute bottom-3 right-4 z-10 flex items-center gap-1.5 border border-cyan/40 bg-cyan/10 px-2.5 py-1 font-mono text-[11px]">
-            <span className="text-muted">BID</span>
-            <span className="tabular font-bold text-cyan">{money(bid)}</span>
-          </div>
-        </main>
-      </div>
-      <BottomBar balance={balance} live={stats.live} price={price} />
+      <footer className="shrink-0 px-6 pb-4 text-center font-mono text-[10px] tracking-widest text-faint">
+        VOLT · BET FUN — Tap Trading · Death Fun · Leaderboard
+      </footer>
     </div>
-  );
-}
-
-function Sep() {
-  return <span className="h-3.5 w-px bg-line" />;
-}
-
-const TONE: Record<string, string> = {
-  cyan: "text-cyan",
-  magenta: "text-magenta",
-  lime: "text-lime",
-  muted: "text-txt",
-};
-
-function Stat({ label, value, tone }: { label: string; value: string; tone: string }) {
-  return (
-    <span className="flex items-center gap-1.5">
-      <span className="tracking-[0.15em] text-faint">{label}</span>
-      <span className={`font-bold tabular ${TONE[tone] ?? "text-txt"}`}>{value}</span>
-    </span>
   );
 }

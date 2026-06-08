@@ -2,7 +2,12 @@
 
 import { useEffect, useRef } from "react";
 import { cellMultiplier, multIntensity, VOL_PER_SQRT_SEC } from "@/lib/grid";
-import { mult as fmtMult, money } from "@/lib/format";
+import { mult as fmtMult } from "@/lib/format";
+
+// compact USDC amount for canvas labels
+function amt(n: number): string {
+  return (n >= 100 ? n.toFixed(0) : n.toFixed(2).replace(/\.00$/, "")) + " USDC";
+}
 
 // ---- engine tuning -------------------------------------------------------
 const VIEW_PAST_MS = 64_000;
@@ -44,21 +49,29 @@ function cellRGB(t: number): [number, number, number] {
 
 export default function GameChart({
   bidSize,
+  zoom = 1,
   onPrice,
   onBalanceDelta,
   onBet,
+  onZoom,
   getBalance,
 }: {
   bidSize: number;
+  zoom?: number;
   onPrice: (p: number) => void;
   onBalanceDelta: (d: number) => void;
   onBet: (b: { stake: number; mult: number; status: BetStatus }) => void;
+  onZoom?: (factor: number) => void;
   getBalance: () => number;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const bidRef = useRef(bidSize);
   bidRef.current = bidSize;
+  const zoomRef = useRef(zoom);
+  zoomRef.current = zoom;
+  const onZoomRef = useRef(onZoom);
+  onZoomRef.current = onZoom;
   const balanceRef = useRef(getBalance);
   balanceRef.current = getBalance;
 
@@ -74,6 +87,7 @@ export default function GameChart({
     const columns: Column[] = [];
     const bets: Bet[] = [];
     const floaters: Floater[] = [];
+    const effects: { x: number; y: number; kind: "win" | "lose"; born: number }[] = [];
     let nextBetId = 1;
     let range = { min: price - MIN_ROWS * step * 0.5, max: price + MIN_ROWS * step * 0.5 };
     const mouse = { x: -1, y: -1, inside: false };
@@ -103,8 +117,9 @@ export default function GameChart({
     const plotBot = () => H - PAD_BOTTOM;
     function xForTime(t: number, now: number) {
       const nowX = W * NOW_X;
-      if (t <= now) return nowX + ((t - now) / VIEW_PAST_MS) * nowX;
-      return nowX + ((t - now) / VIEW_FUTURE_MS) * (W - nowX);
+      const z = zoomRef.current;
+      if (t <= now) return nowX + ((t - now) / (VIEW_PAST_MS / z)) * nowX;
+      return nowX + ((t - now) / (VIEW_FUTURE_MS / z)) * (W - nowX);
     }
     function yForPrice(p: number) {
       const bot = plotBot();
@@ -164,21 +179,19 @@ export default function GameChart({
     function settleColumn(c: Column, now: number) {
       for (const b of bets) {
         if (b.status !== "live" || b.colT !== c.t) continue;
+        const ex = xForTime(c.t, now);
+        const ey = yForPrice(bandCenter(b.band));
         if (b.band === c.winRow) {
           b.status = "won";
           const payout = b.stake * b.mult;
           onBalanceDelta(payout);
           onBet({ stake: b.stake, mult: b.mult, status: "won" });
-          floaters.push({
-            x: xForTime(c.t, now),
-            y: yForPrice(bandCenter(b.band)),
-            text: "+" + money(payout),
-            born: now,
-            kind: "win",
-          });
+          floaters.push({ x: ex, y: ey, text: "+" + amt(payout), born: now, kind: "win" });
+          effects.push({ x: ex, y: ey, kind: "win", born: now });
         } else {
           b.status = "lost";
           onBet({ stake: b.stake, mult: b.mult, status: "lost" });
+          effects.push({ x: ex, y: ey, kind: "lose", born: now });
         }
       }
     }
@@ -241,9 +254,14 @@ export default function GameChart({
       const r = canvas.getBoundingClientRect();
       handleClick(e.clientX - r.left, e.clientY - r.top);
     }
+    function onWheel(e: WheelEvent) {
+      e.preventDefault();
+      onZoomRef.current?.(e.deltaY < 0 ? 1.12 : 1 / 1.12);
+    }
     canvas.addEventListener("mousemove", onMove);
     canvas.addEventListener("mouseleave", onLeave);
     canvas.addEventListener("click", onClick);
+    canvas.addEventListener("wheel", onWheel, { passive: false });
 
     function updateRange(now: number) {
       let lo = price;
@@ -254,7 +272,8 @@ export default function GameChart({
         if (h.p > hi) hi = h.p;
       }
       const center = (lo + hi) / 2;
-      const half = Math.min(Math.max((hi - lo) / 2 + step * 2, (MIN_ROWS * step) / 2), (MAX_ROWS * step) / 2);
+      const z = zoomRef.current;
+      const half = Math.min(Math.max((hi - lo) / 2 + step * 2, (MIN_ROWS * step) / 2), (MAX_ROWS * step) / 2) / z;
       range.min += (center - half - range.min) * 0.08;
       range.max += (center + half - range.max) * 0.08;
     }
@@ -379,7 +398,7 @@ export default function GameChart({
         ctx.shadowBlur = 0;
         if (yBot - yTop > 16) {
           ctx.fillStyle = won ? "#06060e" : "#ffe27a";
-          ctx.fillText(money(bt.stake), (x0 + x1) / 2, (yTop + yBot) / 2 - 6);
+          ctx.fillText(amt(bt.stake), (x0 + x1) / 2, (yTop + yBot) / 2 - 6);
           ctx.font = "600 10px var(--font-mono, monospace)";
           ctx.fillText(fmtMult(bt.mult), (x0 + x1) / 2, (yTop + yBot) / 2 + 7);
           ctx.font = "700 12px var(--font-display, sans-serif)";
@@ -469,6 +488,41 @@ export default function GameChart({
         ctx.globalAlpha = 1;
       }
 
+      // ---- win ○ / lose ✕ neon effects (framed box) ----
+      for (let i = effects.length - 1; i >= 0; i--) {
+        const ef = effects[i];
+        const age = now - ef.born;
+        if (age > 1000) {
+          effects.splice(i, 1);
+          continue;
+        }
+        const t = age / 1000;
+        const grow = Math.min(1, t / 0.25);
+        const s = (22 + grow * 8) * (1 + (zoomRef.current - 1) * 0.3);
+        ctx.globalAlpha = t < 0.7 ? 1 : 1 - (t - 0.7) / 0.3;
+        const col = ef.kind === "win" ? "#39ff14" : "#ff2bd6";
+        ctx.strokeStyle = col;
+        ctx.shadowColor = col;
+        ctx.shadowBlur = 16;
+        ctx.lineWidth = 2.4;
+        roundRect(ctx, ef.x - s, ef.y - s, s * 2, s * 2, 6);
+        ctx.stroke();
+        ctx.beginPath();
+        if (ef.kind === "win") {
+          ctx.arc(ef.x, ef.y, s * 0.55, 0, Math.PI * 2 * grow);
+          ctx.stroke();
+        } else {
+          const d = s * 0.5 * grow;
+          ctx.moveTo(ef.x - d, ef.y - d);
+          ctx.lineTo(ef.x + d, ef.y + d);
+          ctx.moveTo(ef.x + d, ef.y - d);
+          ctx.lineTo(ef.x - d, ef.y + d);
+          ctx.stroke();
+        }
+        ctx.shadowBlur = 0;
+        ctx.globalAlpha = 1;
+      }
+
       for (let i = bets.length - 1; i >= 0; i--) {
         if (bets[i].status !== "live" && now - bets[i].bornAt > 6000) bets.splice(i, 1);
       }
@@ -483,6 +537,7 @@ export default function GameChart({
       canvas.removeEventListener("mousemove", onMove);
       canvas.removeEventListener("mouseleave", onLeave);
       canvas.removeEventListener("click", onClick);
+      canvas.removeEventListener("wheel", onWheel);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
