@@ -1,19 +1,17 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import { Volume2, Crosshair, Eye, Music, Info } from "lucide-react";
 import Header from "@/components/Header";
-import LeftRail from "@/components/LeftRail";
 import SidePanel from "@/components/SidePanel";
 import BottomBar from "@/components/BottomBar";
-import GameChart from "@/components/GameChart";
+import GameChart, { type BetStatus } from "@/components/GameChart";
 import { money } from "@/lib/format";
 
 export default function Page() {
   const [balance, setBalance] = useState(100);
   const [bid, setBid] = useState(0.9);
   const [price, setPrice] = useState(1673.49);
-  const [stats, setStats] = useState({ live: 0, won: 0, wagered: 0, profit: 0 });
+  const [stats, setStats] = useState({ live: 0, won: 0, profit: 0 });
 
   const balanceRef = useRef(balance);
   balanceRef.current = balance;
@@ -22,12 +20,22 @@ export default function Page() {
     setBalance((b) => Math.max(0, +(b + d).toFixed(2)));
   }, []);
 
-  const onBet = useCallback((b: { stake: number; mult: number; status: "live" | "won" | "lost" }) => {
+  const onBet = useCallback((b: { stake: number; mult: number; status: BetStatus }) => {
     setStats((s) => {
-      if (b.status === "live") return { ...s, live: s.live + 1, wagered: +(s.wagered + b.stake).toFixed(2) };
-      if (b.status === "won")
-        return { ...s, live: Math.max(0, s.live - 1), won: s.won + 1, profit: +(s.profit + b.stake * (b.mult - 1)).toFixed(2) };
-      return { ...s, live: Math.max(0, s.live - 1), profit: +(s.profit - b.stake).toFixed(2) };
+      switch (b.status) {
+        case "live":
+          return { ...s, live: s.live + 1 };
+        case "cancel":
+          return { ...s, live: Math.max(0, s.live - 1) };
+        case "won":
+          return {
+            live: Math.max(0, s.live - 1),
+            won: s.won + 1,
+            profit: +(s.profit + b.stake * (b.mult - 1)).toFixed(2),
+          };
+        case "lost":
+          return { ...s, live: Math.max(0, s.live - 1), profit: +(s.profit - b.stake).toFixed(2) };
+      }
     });
   }, []);
 
@@ -35,7 +43,6 @@ export default function Page() {
     <div className="flex h-screen flex-col">
       <Header />
       <div className="flex min-h-0 flex-1">
-        <LeftRail />
         <SidePanel
           balance={balance}
           price={price}
@@ -45,30 +52,17 @@ export default function Page() {
           onWithdraw={() => setBalance(0)}
         />
 
-        {/* chart area */}
         <main className="relative flex min-w-0 flex-1 flex-col">
-          {/* toolbar */}
-          <div className="absolute left-1/2 top-3 z-10 flex -translate-x-1/2 gap-1 rounded-lg border border-line bg-panel-2/80 p-1 backdrop-blur">
-            {[Volume2, Crosshair, Eye, Music, Info].map((I, i) => (
-              <button
-                key={i}
-                className="flex h-7 w-7 items-center justify-center rounded-md text-text-faint hover:bg-panel-3 hover:text-text"
-              >
-                <I size={15} />
-              </button>
-            ))}
-          </div>
-
-          {/* live stats pill */}
-          <div className="absolute right-4 top-3 z-10 flex items-center gap-3 rounded-lg border border-line bg-panel-2/80 px-3 py-1.5 text-[12px] backdrop-blur">
-            <Stat label="Live" value={String(stats.live)} />
-            <span className="h-4 w-px bg-line" />
-            <Stat label="Won" value={String(stats.won)} />
-            <span className="h-4 w-px bg-line" />
+          {/* live stats */}
+          <div className="panel clip absolute right-4 top-3 z-10 flex items-center gap-3 px-3 py-1.5 font-mono text-[11px]">
+            <Stat label="LIVE" value={String(stats.live)} tone="magenta" />
+            <Sep />
+            <Stat label="WON" value={String(stats.won)} tone="cyan" />
+            <Sep />
             <Stat
               label="P&L"
               value={(stats.profit >= 0 ? "+" : "") + money(stats.profit)}
-              tone={stats.profit > 0 ? "good" : stats.profit < 0 ? "bad" : undefined}
+              tone={stats.profit > 0 ? "lime" : stats.profit < 0 ? "magenta" : "muted"}
             />
           </div>
 
@@ -83,28 +77,37 @@ export default function Page() {
           </div>
 
           {/* corner chips */}
-          <div className="pointer-events-none absolute bottom-3 left-4 z-10 flex items-center gap-1.5 rounded-md border border-line bg-panel-2/80 px-2.5 py-1 text-[12px] backdrop-blur">
-            <span className="h-2 w-2 rounded-full bg-accent" /> <span className="tabular">{money(balance)}</span>
+          <div className="panel clip pointer-events-none absolute bottom-3 left-4 z-10 flex items-center gap-1.5 px-2.5 py-1 font-mono text-[11px]">
+            <span className="h-1.5 w-1.5 rounded-full bg-cyan" />
+            <span className="tabular text-cyan">{money(balance)}</span>
           </div>
-          <div className="pointer-events-none absolute bottom-3 right-4 z-10 flex items-center gap-1.5 rounded-md border border-accent/40 bg-accent/10 px-2.5 py-1 text-[12px] backdrop-blur">
-            <span className="text-text-muted">Bid</span> <span className="tabular font-semibold text-accent">{money(bid)}</span>
+          <div className="clip pointer-events-none absolute bottom-3 right-4 z-10 flex items-center gap-1.5 border border-cyan/40 bg-cyan/10 px-2.5 py-1 font-mono text-[11px]">
+            <span className="text-muted">BID</span>
+            <span className="tabular font-bold text-cyan">{money(bid)}</span>
           </div>
         </main>
       </div>
-      <BottomBar balance={balance} />
+      <BottomBar balance={balance} live={stats.live} price={price} />
     </div>
   );
 }
 
-function Stat({ label, value, tone }: { label: string; value: string; tone?: "good" | "bad" }) {
+function Sep() {
+  return <span className="h-3.5 w-px bg-line" />;
+}
+
+const TONE: Record<string, string> = {
+  cyan: "text-cyan",
+  magenta: "text-magenta",
+  lime: "text-lime",
+  muted: "text-txt",
+};
+
+function Stat({ label, value, tone }: { label: string; value: string; tone: string }) {
   return (
     <span className="flex items-center gap-1.5">
-      <span className="text-text-faint">{label}</span>
-      <span
-        className={`tabular font-semibold ${tone === "good" ? "text-accent" : tone === "bad" ? "text-danger" : "text-text"}`}
-      >
-        {value}
-      </span>
+      <span className="tracking-[0.15em] text-faint">{label}</span>
+      <span className={`font-bold tabular ${TONE[tone] ?? "text-txt"}`}>{value}</span>
     </span>
   );
 }

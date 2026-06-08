@@ -1,10 +1,14 @@
-# GIWA Slide — on-chain tap-trading game
+# VOLT ⚡ — on-chain tap-trading game
 
-A full on-chain **tap-trading** game on **Giwa Sepolia** (Chain ID `91342`),
-inspired by HyperSwap's "Tap Trading". A live ETH/USD price line scrolls right;
-the future is tiled with a **multiplier grid**. Tap a cell — if the real price
-line passes through it, you win `stake × multiplier`. Nearer cells pay a little,
-far/extreme cells pay up to `30x`.
+A full on-chain **tap-trading** game on **Giwa Sepolia** (Chain ID `91342`)
+with an original neon/cyberpunk UI. A live ETH/USD price line scrolls right; the
+future is tiled with a **multiplier grid**. Tap a cell — if the real price line
+passes through it, you win `stake × multiplier`.
+
+- **Tap again to cancel** a bet (full refund) while it's still live.
+- Cells closer than **10 seconds** are **locked** (can't be bet).
+- Multipliers are exact fair odds minus a **7% house edge** (cyan = low, magenta
+  = high); cells outside `(1x, 30x]` aren't offered, carving a probability cone.
 
 > Separate module from the v1 prediction market (`/contracts`, `/web`, …). Same
 > chain, same oracle trust model, its own contract + UI.

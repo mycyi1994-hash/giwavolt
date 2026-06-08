@@ -1,38 +1,31 @@
 "use client";
 
+import { useAccount } from "wagmi";
 import { money } from "@/lib/format";
-import { Activity, BarChart2, Search } from "lucide-react";
 
-export default function BottomBar({ balance }: { balance: number }) {
-  const tickers = [
-    { sym: "BTC", val: "$63,250", color: "#f7931a" },
-    { sym: "ETH", val: "$1,673", color: "#627eea" },
-    { sym: "SOL", val: "$29,236", color: "#14f195" },
-  ];
+export default function BottomBar({ balance, live, price }: { balance: number; live: number; price: number }) {
+  const { isConnected } = useAccount();
   return (
-    <div className="flex h-9 shrink-0 items-center gap-4 border-t border-line bg-panel/70 px-4 text-[12px] text-text-muted backdrop-blur">
-      <span className="tabular flex items-center gap-1.5 rounded bg-panel-2 px-2 py-0.5">
-        <span className="h-2 w-2 rounded-full bg-accent" />
-        {money(balance)}
+    <div className="relative flex h-8 shrink-0 items-center gap-5 border-t border-line bg-ink/70 px-4 font-mono text-[11px] tracking-wider text-muted backdrop-blur">
+      <span className="flex items-center gap-1.5 text-cyan">
+        <span className="h-1.5 w-1.5 rounded-full bg-cyan animate-flicker" /> ONLINE · GIWA SEPOLIA
       </span>
-      <button className="hidden items-center gap-1.5 hover:text-text sm:flex">
-        <Activity size={13} /> Wallet Tracker
-      </button>
-      <button className="hidden items-center gap-1.5 hover:text-text sm:flex">
-        <BarChart2 size={13} /> PnL
-      </button>
-      <button className="hidden items-center gap-1.5 hover:text-text sm:flex">
-        <Search size={13} /> Search
-      </button>
-      <div className="ml-auto flex items-center gap-3">
-        {tickers.map((t) => (
-          <span key={t.sym} className="tabular flex items-center gap-1.5">
-            <span className="h-2.5 w-2.5 rounded-full" style={{ background: t.color }} />
-            {t.val}
-          </span>
-        ))}
-        <span className="rounded bg-panel-2 px-2 py-0.5 text-text-faint">#BTC</span>
+      <span className="hidden items-center gap-1.5 sm:flex">
+        WALLET
+        <span className={isConnected ? "text-lime" : "text-faint"}>{isConnected ? "CONNECTED" : "—"}</span>
+      </span>
+      <span className="hidden sm:inline">
+        ETH <span className="text-lime tabular">{money(price, 2)}</span>
+      </span>
+      <div className="ml-auto flex items-center gap-5">
+        <span>
+          LIVE BETS <span className="text-magenta tabular">{live}</span>
+        </span>
+        <span>
+          BAL <span className="text-cyan tabular">{money(balance)}</span>
+        </span>
       </div>
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-magenta/50 to-transparent" />
     </div>
   );
 }

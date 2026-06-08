@@ -3,7 +3,8 @@
 @tailwind utilities;
 
 :root {
-  --font-sans: "Inter", system-ui, sans-serif;
+  --font-display: "Orbitron", system-ui, sans-serif;
+  --font-sans: "Rajdhani", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
 }
 
@@ -13,22 +14,37 @@ body {
 }
 
 body {
-  background:
-    radial-gradient(1200px 600px at 70% -10%, rgba(62, 224, 127, 0.06), transparent 60%),
-    #05080a;
-  color: #e8f0ee;
+  background-color: #06060e;
+  /* neon perspective grid + corner glows */
+  background-image:
+    radial-gradient(900px 500px at 85% -10%, rgba(255, 43, 214, 0.12), transparent 60%),
+    radial-gradient(900px 600px at 0% 110%, rgba(0, 229, 255, 0.12), transparent 60%),
+    linear-gradient(rgba(0, 229, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 43, 214, 0.05) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 44px 44px, 44px 44px;
+  color: #e9f3ff;
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
 }
 
-/* thin scrollbars */
+/* faint scanlines over everything */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.18) 0 1px, transparent 1px 3px);
+  mix-blend-mode: multiply;
+  z-index: 9999;
+}
+
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 ::-webkit-scrollbar-thumb {
-  background: #1b2329;
+  background: linear-gradient(#00e5ff, #ff2bd6);
   border-radius: 8px;
 }
 ::-webkit-scrollbar-track {
@@ -40,6 +56,34 @@ body {
   font-family: var(--font-mono);
 }
 
-.glow {
-  box-shadow: 0 0 0 1px rgba(62, 224, 127, 0.5), 0 0 18px rgba(62, 224, 127, 0.25);
+/* angled cyberpunk corners */
+.clip {
+  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+}
+
+/* glass panel with neon edge */
+.panel {
+  background: linear-gradient(160deg, rgba(16, 16, 31, 0.85), rgba(10, 10, 22, 0.7));
+  border: 1px solid rgba(0, 229, 255, 0.18);
+  backdrop-filter: blur(8px);
+}
+
+.neon-cyan {
+  text-shadow: 0 0 6px rgba(0, 229, 255, 0.8), 0 0 18px rgba(0, 229, 255, 0.45);
+}
+.neon-magenta {
+  text-shadow: 0 0 6px rgba(255, 43, 214, 0.8), 0 0 18px rgba(255, 43, 214, 0.45);
+}
+.neon-lime {
+  text-shadow: 0 0 6px rgba(57, 255, 20, 0.8), 0 0 18px rgba(57, 255, 20, 0.4);
+}
+
+.btn-neon {
+  position: relative;
+  border: 1px solid rgba(0, 229, 255, 0.55);
+  box-shadow: 0 0 12px rgba(0, 229, 255, 0.25), inset 0 0 12px rgba(0, 229, 255, 0.08);
+  transition: all 140ms ease;
+}
+.btn-neon:hover {
+  box-shadow: 0 0 22px rgba(0, 229, 255, 0.55), inset 0 0 16px rgba(0, 229, 255, 0.15);
 }

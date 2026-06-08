@@ -1,53 +1,35 @@
 "use client";
 
-import { Search, Download } from "lucide-react";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
-
-const TABS = ["Trade", "Discover", "Predict", "Tap Trading", "Referrals", "More"];
+import { Zap } from "lucide-react";
 
 export default function Header() {
   return (
-    <header className="flex h-14 shrink-0 items-center gap-6 border-b border-line bg-panel/70 px-4 backdrop-blur">
-      <div className="flex items-center gap-2">
-        <div className="flex h-7 w-7 items-center justify-center rounded-md bg-accent text-sm font-black text-[#06140c]">
-          기
+    <header className="relative flex h-14 shrink-0 items-center gap-4 border-b border-line bg-ink/70 px-4 backdrop-blur">
+      {/* brand */}
+      <div className="flex items-center gap-2.5">
+        <div className="grid h-8 w-8 place-items-center bg-gradient-to-br from-cyan to-magenta text-[#06060e] clip animate-glow">
+          <Zap size={17} strokeWidth={2.6} />
         </div>
-        <span className="text-[15px] font-bold tracking-tight">
-          GIWA<span className="text-accent">Slide</span>
-        </span>
+        <div className="leading-none">
+          <div className="font-display text-[17px] font-black tracking-[0.18em] text-txt neon-cyan">
+            VOLT
+          </div>
+          <div className="font-mono text-[9px] tracking-[0.25em] text-faint">TAP·TRADING</div>
+        </div>
       </div>
 
-      <nav className="hidden items-center gap-1 md:flex">
-        {TABS.map((t) => {
-          const active = t === "Tap Trading";
-          return (
-            <button
-              key={t}
-              className={`relative rounded-md px-3 py-1.5 text-[13px] font-medium transition ${
-                active ? "text-text" : "text-text-muted hover:text-text"
-              }`}
-            >
-              {t}
-              {t === "Predict" && (
-                <span className="ml-1 rounded bg-accent/20 px-1 text-[9px] font-bold text-accent">NEW</span>
-              )}
-              {active && <span className="absolute inset-x-3 -bottom-[15px] h-0.5 rounded-full bg-accent" />}
-            </button>
-          );
-        })}
-      </nav>
+      <span className="ml-2 hidden items-center gap-1.5 border border-line bg-ink-2 px-2.5 py-1 font-mono text-[10px] tracking-wider text-cyan clip sm:flex">
+        <span className="h-1.5 w-1.5 rounded-full bg-cyan animate-flicker" />
+        GIWA SEPOLIA · 91342
+      </span>
 
-      <div className="ml-auto flex items-center gap-2.5">
-        <div className="hidden items-center gap-2 rounded-md border border-line bg-panel-2 px-3 py-1.5 text-[13px] text-text-faint lg:flex">
-          <Search size={14} />
-          <span>Search by token…</span>
-          <kbd className="rounded border border-line px-1 text-[10px]">/</kbd>
-        </div>
-        <button className="hidden items-center gap-1.5 rounded-md border border-line bg-panel-2 px-3 py-1.5 text-[13px] font-medium hover:border-line-strong sm:flex">
-          <Download size={14} /> Deposit
-        </button>
+      <div className="ml-auto flex items-center gap-3">
         <ConnectButton accountStatus="address" chainStatus="icon" showBalance={false} />
       </div>
+
+      {/* neon underline */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-cyan/60 to-transparent" />
     </header>
   );
 }

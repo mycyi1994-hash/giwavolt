@@ -1,11 +1,10 @@
 "use client";
 
-import { ChevronDown, LineChart, Trophy, Wallet } from "lucide-react";
 import { useAccount } from "wagmi";
+import { Plus, Minus } from "lucide-react";
 import { money, price as fmtPrice, shortAddr } from "@/lib/format";
 
 const BIDS = [0.3, 0.9, 3, 9];
-const HYPE_USD = 30; // 1 HYPE ≈ $30 (demo)
 
 export default function SidePanel({
   balance,
@@ -23,68 +22,49 @@ export default function SidePanel({
   onWithdraw: () => void;
 }) {
   const { address, isConnected } = useAccount();
+
   return (
-    <aside className="flex w-[260px] shrink-0 flex-col gap-4 border-r border-line bg-panel/40 p-4">
-      {/* asset selector */}
-      <div className="flex items-center justify-between">
-        <button className="flex items-center gap-2 rounded-md px-1.5 py-1 hover:bg-panel-2">
-          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#627eea] text-[10px] font-bold">
+    <aside className="flex w-[268px] shrink-0 flex-col gap-5 border-r border-line bg-ink/40 p-4">
+      {/* asset + live price */}
+      <div className="panel clip flex items-center justify-between px-3 py-2.5">
+        <div className="flex items-center gap-2">
+          <span className="grid h-6 w-6 place-items-center rounded-full bg-[#627eea] text-[10px] font-bold text-white">
             Ξ
           </span>
-          <span className="font-semibold">ETH/USD</span>
-          <ChevronDown size={15} className="text-text-faint" />
-        </button>
-        <span className="tabular text-[15px] font-semibold text-accent">{fmtPrice(price)}</span>
-      </div>
-
-      <div className="flex gap-1 text-text-faint">
-        {[LineChart, Trophy, Wallet].map((I, i) => (
-          <button
-            key={i}
-            className={`flex h-8 w-8 items-center justify-center rounded-md ${
-              i === 2 ? "bg-panel-3 text-accent" : "hover:bg-panel-2 hover:text-text"
-            }`}
-          >
-            <I size={16} />
-          </button>
-        ))}
-      </div>
-
-      {/* wallet */}
-      <div>
-        <div className="text-[11px] font-semibold uppercase tracking-wide text-text-faint">Wallet</div>
-        <div className="tabular mt-0.5 flex items-center gap-1.5 text-sm text-text-muted">
-          <span className={`h-1.5 w-1.5 rounded-full ${isConnected ? "bg-accent" : "bg-text-faint"}`} />
-          {isConnected && address ? shortAddr(address) : "Not connected"}
+          <span className="font-display text-sm font-bold tracking-wide">ETH / USD</span>
         </div>
+        <span className="tabular text-[15px] font-bold text-lime neon-lime">{fmtPrice(price)}</span>
       </div>
 
-      {/* game balance */}
-      <div>
-        <div className="text-[11px] font-semibold uppercase tracking-wide text-text-faint">Game Balance</div>
-        <div className="tabular mt-0.5 text-3xl font-bold">{money(balance)}</div>
-        <div className="tabular text-xs text-text-muted">{(balance / HYPE_USD).toFixed(2)} HYPE</div>
-      </div>
-
-      {/* bid size */}
-      <div>
-        <div className="flex items-center justify-between">
-          <span className="text-[11px] font-semibold uppercase tracking-wide text-text-faint">Bid Size</span>
-          <span className="tabular text-xs text-text-muted">
-            {(bid / HYPE_USD).toFixed(2)} HYPE ≈ {money(bid)}
+      {/* wallet status */}
+      <Field label="WALLET">
+        <div className="tabular flex items-center gap-1.5 text-sm">
+          <span className={`h-1.5 w-1.5 rounded-full ${isConnected ? "bg-lime animate-flicker" : "bg-faint"}`} />
+          <span className={isConnected ? "text-txt" : "text-faint"}>
+            {isConnected && address ? shortAddr(address) : "Not connected"}
           </span>
         </div>
-        <div className="mt-2 grid grid-cols-4 gap-1.5">
+      </Field>
+
+      {/* balance */}
+      <Field label="GAME BALANCE">
+        <div className="tabular text-[34px] font-black leading-none text-txt neon-cyan">{money(balance)}</div>
+      </Field>
+
+      {/* bid */}
+      <div>
+        <div className="mb-2 font-mono text-[10px] tracking-[0.2em] text-faint">BID SIZE</div>
+        <div className="grid grid-cols-4 gap-1.5">
           {BIDS.map((b) => {
             const active = b === bid;
             return (
               <button
                 key={b}
                 onClick={() => onBid(b)}
-                className={`rounded-md border py-2 text-[13px] font-semibold tabular transition ${
+                className={`clip py-2.5 font-mono text-[13px] font-bold tabular transition ${
                   active
-                    ? "border-accent bg-accent/10 text-accent glow"
-                    : "border-line bg-panel-2 text-text-muted hover:border-line-strong hover:text-text"
+                    ? "border border-cyan bg-cyan/10 text-cyan animate-glow"
+                    : "border border-line bg-ink-2 text-muted hover:border-line-strong hover:text-txt"
                 }`}
               >
                 {money(b, b < 1 ? 2 : 0)}
@@ -94,26 +74,43 @@ export default function SidePanel({
         </div>
       </div>
 
-      {/* actions */}
-      <div className="mt-1 grid grid-cols-2 gap-2">
+      {/* funds */}
+      <div className="grid grid-cols-2 gap-2">
         <button
           onClick={onAddFunds}
-          className="rounded-md bg-accent py-2.5 text-[13px] font-bold text-[#06140c] transition hover:brightness-110"
+          className="btn-neon clip flex items-center justify-center gap-1 bg-cyan/10 py-2.5 font-display text-[13px] font-bold tracking-wide text-cyan"
         >
-          Add Funds
+          <Plus size={15} strokeWidth={3} /> FUNDS
         </button>
         <button
           onClick={onWithdraw}
-          className="rounded-md border border-accent/60 py-2.5 text-[13px] font-bold text-accent transition hover:bg-accent/10"
+          className="clip flex items-center justify-center gap-1 border border-magenta/50 py-2.5 font-display text-[13px] font-bold tracking-wide text-magenta transition hover:bg-magenta/10"
         >
-          Withdraw
+          <Minus size={15} strokeWidth={3} /> CLEAR
         </button>
       </div>
 
-      <p className="mt-auto text-[11px] leading-relaxed text-text-faint">
-        Tap a cell on the grid. If the live ETH/USD line passes through it, you win{" "}
-        <span className="text-text-muted">stake × multiplier</span>. Settled fully on-chain on Giwa Sepolia.
-      </p>
+      {/* how to play */}
+      <div className="mt-auto space-y-2 border-t border-line pt-3 font-sans text-[12px] leading-relaxed text-muted">
+        <p>
+          <span className="text-cyan">›</span> Tap a grid cell. If the live line crosses it, you win{" "}
+          <span className="text-lime">stake × multiplier</span>.
+        </p>
+        <p>
+          <span className="text-cyan">›</span> Tap again to <span className="text-magenta">cancel</span>. Cells under{" "}
+          <span className="text-magenta">10s</span> are locked.
+        </p>
+        <p className="text-faint">Settled fully on-chain · 7% house edge · Giwa Sepolia.</p>
+      </div>
     </aside>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <div className="mb-1 font-mono text-[10px] tracking-[0.2em] text-faint">{label}</div>
+      {children}
+    </div>
   );
 }
