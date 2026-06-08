@@ -1,0 +1,23 @@
+{
+  "name": "@giwa-slide/contracts",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "deploy:giwa": "hardhat run scripts/deploy.ts --network giwaSepolia",
+    "deploy:local": "hardhat run scripts/deploy.ts --network hardhat"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@types/chai": "^4.3.11",
+    "@types/mocha": "^10.0.6",
+    "@types/node": "^20.11.30",
+    "chai": "^4.4.1",
+    "ethers": "^6.13.0",
+    "hardhat": "^2.22.0",
+    "solc": "^0.8.24",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.0"
+  }
+}
