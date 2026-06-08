@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Plus, RotateCcw } from "lucide-react";
 import { usePlay } from "./PlayProvider";
 import ModeToggle from "./ModeToggle";
+import { sfx } from "@/lib/sound";
 import { usdc, krw } from "@/lib/money";
 
 const PRESETS = [1, 5, 10, 100];
@@ -65,6 +66,7 @@ export default function TapPanel({
               <button
                 key={b}
                 onClick={() => {
+                  sfx.select();
                   setCustom("");
                   onBid(b);
                 }}
@@ -94,7 +96,10 @@ export default function TapPanel({
       {/* funds */}
       <div className="grid grid-cols-2 gap-2">
         <button
-          onClick={() => adjust(mode, mode === "demo" ? 500 : 100)}
+          onClick={() => {
+            sfx.tick();
+            adjust(mode, mode === "demo" ? 500 : 100);
+          }}
           className="btn-neon clip flex items-center justify-center gap-1 bg-cyan/10 py-2.5 font-display text-[12px] font-bold tracking-wide text-cyan"
         >
           <Plus size={14} strokeWidth={3} /> {mode === "demo" ? "PLAY MONEY" : "DEPOSIT"}

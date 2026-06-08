@@ -6,6 +6,8 @@ import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { Zap, Home, LineChart, Skull, Trophy, User } from "lucide-react";
 import { usePlay } from "@/components/play/PlayProvider";
 import ModeToggle from "@/components/play/ModeToggle";
+import SoundToggle from "@/components/play/SoundToggle";
+import AnimatedNumber from "@/components/ui/AnimatedNumber";
 import { usdc, krw } from "@/lib/money";
 
 const TABS = [
@@ -55,10 +57,11 @@ export default function TopNav() {
       {/* right cluster: fund · mode · wallet · profile */}
       <div className="ml-auto flex items-center gap-2.5">
         <div className="hidden flex-col items-end leading-none md:flex">
-          <span className="tabular text-[13px] font-bold text-cyan">{usdc(bal)}</span>
+          <AnimatedNumber value={bal} format={(n) => usdc(n)} className="tabular text-[13px] font-bold text-cyan" />
           <span className="tabular text-[10px] text-faint">{krw(bal)}</span>
         </div>
         <ModeToggle />
+        <SoundToggle />
         <ConnectButton accountStatus="address" chainStatus="none" showBalance={false} />
         <Link
           href="/terminal/profile"

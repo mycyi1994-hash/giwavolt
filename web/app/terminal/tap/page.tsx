@@ -6,6 +6,8 @@ import GameChart, { type BetStatus } from "@/components/GameChart";
 import TapPanel from "@/components/play/TapPanel";
 import ConnectGate from "@/components/play/ConnectGate";
 import { usePlay } from "@/components/play/PlayProvider";
+import { useToast } from "@/components/ui/Toast";
+import { sfx } from "@/lib/sound";
 import { usdc } from "@/lib/money";
 
 export default function TapTradingPage() {
@@ -24,20 +26,40 @@ export default function TapTradingPage() {
   );
   const getBalance = useCallback(() => ctxRef.current.balance[ctxRef.current.mode], []);
 
-  const onBet = useCallback((b: { stake: number; mult: number; status: BetStatus }) => {
-    setStats((s) => {
+  const toast = useToast();
+  const onBet = useCallback(
+    (b: { stake: number; mult: number; status: BetStatus }) => {
       switch (b.status) {
         case "live":
-          return { ...s, live: s.live + 1 };
+          sfx.place();
+          break;
         case "cancel":
-          return { ...s, live: Math.max(0, s.live - 1) };
+          sfx.cancel();
+          break;
         case "won":
-          return { live: Math.max(0, s.live - 1), won: s.won + 1, profit: +(s.profit + b.stake * (b.mult - 1)).toFixed(2) };
+          sfx.win();
+          toast.push("win", `WIN +${usdc(b.stake * b.mult)}`, `${b.mult.toFixed(2)}× hit`);
+          break;
         case "lost":
-          return { ...s, live: Math.max(0, s.live - 1), profit: +(s.profit - b.stake).toFixed(2) };
+          sfx.lose();
+          toast.push("lose", `MISS −${usdc(b.stake)}`, "line dodged it");
+          break;
       }
-    });
-  }, []);
+      setStats((s) => {
+        switch (b.status) {
+          case "live":
+            return { ...s, live: s.live + 1 };
+          case "cancel":
+            return { ...s, live: Math.max(0, s.live - 1) };
+          case "won":
+            return { live: Math.max(0, s.live - 1), won: s.won + 1, profit: +(s.profit + b.stake * (b.mult - 1)).toFixed(2) };
+          case "lost":
+            return { ...s, live: Math.max(0, s.live - 1), profit: +(s.profit - b.stake).toFixed(2) };
+        }
+      });
+    },
+    [toast]
+  );
 
   const clampZoom = (z: number) => Math.max(0.6, Math.min(2.6, z));
 

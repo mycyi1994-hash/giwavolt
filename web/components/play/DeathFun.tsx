@@ -4,6 +4,9 @@ import { useEffect, useState } from "react";
 import { Skull, Shuffle, Hand, Gem } from "lucide-react";
 import { usePlay } from "./PlayProvider";
 import ModeToggle from "./ModeToggle";
+import AnimatedNumber from "@/components/ui/AnimatedNumber";
+import { useToast } from "@/components/ui/Toast";
+import { sfx } from "@/lib/sound";
 import { newBoard, multiplierAfter, revealAll, MIN_BOMBS, MAX_BOMBS } from "@/lib/death";
 import { usdc, krw } from "@/lib/money";
 
@@ -11,8 +14,10 @@ const PRESETS = [1, 5, 10, 100];
 
 export default function DeathFun() {
   const { mode, balance, adjust, death, setDeath } = usePlay();
+  const toast = useToast();
   const [stake, setStake] = useState(5);
   const [custom, setCustom] = useState("");
+  const [shake, setShake] = useState(false);
 
   // ensure an idle board exists; reroll when mode changes while idle
   useEffect(() => {
@@ -32,15 +37,21 @@ export default function DeathFun() {
   const start = () => {
     if (death.status !== "idle") return; // must be a fresh, unseen board
     if (stake <= 0 || balance[mode] < stake) return;
+    sfx.place();
     adjust(mode, -stake);
     setDeath({ ...death, stake, tiles: death.tiles.map(() => "hidden"), picks: 0, multiplier: 1, status: "playing", cashout: 0 });
   };
   const reveal = (i: number) => {
     if (!playing || death.tiles[i] !== "hidden") return;
     if (death.bombsIdx.includes(i)) {
+      sfx.skull();
+      setShake(true);
+      setTimeout(() => setShake(false), 400);
       const tiles = revealAll({ ...death, tiles: death.tiles.map((t, k) => (k === i ? "skull" : t)) });
       setDeath({ ...death, tiles, status: "busted", cashout: 0 });
+      toast.push("skull", `BUSTED −${usdc(death.stake)}`, "hit a skull");
     } else {
+      sfx.reveal();
       const tiles = death.tiles.slice();
       tiles[i] = "safe";
       const picks = death.picks + 1;
@@ -50,11 +61,14 @@ export default function DeathFun() {
   const stop = () => {
     if (!playing) return;
     const cashout = +(death.stake * death.multiplier).toFixed(2);
+    sfx.cashout();
     adjust(death.mode, cashout);
     setDeath({ ...death, tiles: revealAll(death), status: "stopped", cashout });
+    toast.push("cash", `CASHED OUT +${usdc(cashout)}`, `${death.multiplier.toFixed(2)}× · ${death.picks} safe`);
   };
   const stageReset = () => {
     if (playing) return;
+    sfx.tick();
     setDeath(newBoard(mode));
   };
   const applyCustom = (v: string) => {
@@ -90,6 +104,7 @@ export default function DeathFun() {
                 <button
                   key={b}
                   onClick={() => {
+                    sfx.select();
                     setCustom("");
                     setStake(b);
                   }}
@@ -166,15 +181,21 @@ export default function DeathFun() {
         {/* status header */}
         <div className="absolute inset-x-0 top-4 flex items-center justify-center gap-6 font-mono text-[12px]">
           <Tag label="SKULLS" value={`${death.bombs}`} cls="text-magenta" />
-          <Tag label="MULT" value={`${death.multiplier.toFixed(2)}×`} cls="text-lime" />
-          <Tag label={playing ? "VALUE" : "STAKE"} value={usdc(playing ? value : death.stake)} cls="text-cyan" />
+          <span className="flex items-center gap-1.5">
+            <span className="tracking-[0.2em] text-faint">MULT</span>
+            <AnimatedNumber value={death.multiplier} format={(n) => `${n.toFixed(2)}×`} className="tabular font-bold text-lime" />
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="tracking-[0.2em] text-faint">{playing ? "VALUE" : "STAKE"}</span>
+            <AnimatedNumber value={playing ? value : death.stake} format={(n) => usdc(n)} className="tabular font-bold text-cyan" />
+          </span>
           {playing && <Tag label="NEXT" value={`${nextMult.toFixed(2)}×`} cls="text-faint" />}
         </div>
 
         <div className="flex flex-col items-center gap-4">
-          <div className="grid grid-cols-5 gap-2.5">
+          <div className={`grid grid-cols-5 gap-2.5 ${shake ? "animate-shake" : ""}`}>
             {death.tiles.map((t, i) => (
-              <Tile key={i} t={t} active={playing} onClick={() => reveal(i)} />
+              <Tile key={`${i}-${t}`} t={t} active={playing} onClick={() => reveal(i)} />
             ))}
           </div>
 
@@ -200,13 +221,13 @@ function Tile({ t, active, onClick }: { t: string; active: boolean; onClick: () 
   const base = "grid h-16 w-16 place-items-center clip border transition";
   if (t === "skull")
     return (
-      <div className={`${base} border-magenta bg-magenta/15 text-magenta`} style={{ boxShadow: "0 0 14px rgba(255,43,214,.4)" }}>
+      <div className={`${base} animate-reveal border-magenta bg-magenta/15 text-magenta`} style={{ boxShadow: "0 0 14px rgba(255,43,214,.4)" }}>
         <Skull size={26} />
       </div>
     );
   if (t === "safe")
     return (
-      <div className={`${base} border-lime bg-lime/12 text-lime`} style={{ boxShadow: "0 0 12px rgba(57,255,20,.3)" }}>
+      <div className={`${base} animate-reveal border-lime bg-lime/12 text-lime`} style={{ boxShadow: "0 0 12px rgba(57,255,20,.3)" }}>
         <Gem size={22} />
       </div>
     );

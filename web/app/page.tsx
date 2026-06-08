@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { Zap, Rocket, Terminal } from "lucide-react";
 import DiceHand from "@/components/landing/DiceHand";
+import SoundToggle from "@/components/play/SoundToggle";
 import { useWalletGate } from "@/lib/walletGate";
 
 export default function Landing() {
@@ -23,7 +24,8 @@ export default function Landing() {
           </div>
           <span className="font-display text-[16px] font-black tracking-[0.2em] text-txt neon-cyan">VOLT</span>
         </div>
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-2.5">
+          <SoundToggle />
           <ConnectButton accountStatus="address" chainStatus="icon" showBalance={false} />
         </div>
       </header>
@@ -67,7 +69,7 @@ export default function Landing() {
 
           {/* right: art */}
           <div className="order-1 flex justify-center md:order-2">
-            <DiceHand className="w-[320px] max-w-full drop-shadow-[0_0_40px_rgba(255,43,214,0.25)] sm:w-[400px]" />
+            <DiceHand className="w-[320px] max-w-full animate-float drop-shadow-[0_0_40px_rgba(255,43,214,0.25)] sm:w-[400px]" />
           </div>
         </div>
       </main>

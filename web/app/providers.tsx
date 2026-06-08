@@ -7,6 +7,7 @@ import { ReactNode, useState } from "react";
 import { WagmiProvider } from "wagmi";
 import { wagmiConfig } from "@/lib/wagmi";
 import { PlayProvider } from "@/components/play/PlayProvider";
+import { ToastProvider } from "@/components/ui/Toast";
 
 export function Providers({ children }: { children: ReactNode }) {
   const [queryClient] = useState(() => new QueryClient());
@@ -16,7 +17,9 @@ export function Providers({ children }: { children: ReactNode }) {
         <RainbowKitProvider
           theme={darkTheme({ accentColor: "#00e5ff", accentColorForeground: "#06060e", borderRadius: "medium" })}
         >
-          <PlayProvider>{children}</PlayProvider>
+          <PlayProvider>
+            <ToastProvider>{children}</ToastProvider>
+          </PlayProvider>
         </RainbowKitProvider>
       </QueryClientProvider>
     </WagmiProvider>
