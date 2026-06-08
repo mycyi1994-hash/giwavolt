@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
-import { Zap, Home, LineChart, Skull, Trophy, User, TrendingUp, CandlestickChart, Wallet } from "lucide-react";
+import { Zap, Home, LineChart, Skull, Trophy, User, TrendingUp, CandlestickChart, Wallet, Spade } from "lucide-react";
 import ModeToggle from "@/components/play/ModeToggle";
 import SoundToggle from "@/components/play/SoundToggle";
 import AnimatedNumber from "@/components/ui/AnimatedNumber";
@@ -15,6 +15,7 @@ const TABS = [
   { href: "/terminal/tap", label: "Tap Trading", icon: LineChart },
   { href: "/terminal/candle", label: "Next Candle", icon: CandlestickChart },
   { href: "/terminal/death", label: "Death Fun", icon: Skull },
+  { href: "/terminal/hilo", label: "Hi-Lo", icon: Spade },
   { href: "/terminal/leaderboard", label: "Leaderboard", icon: Trophy },
 ];
 

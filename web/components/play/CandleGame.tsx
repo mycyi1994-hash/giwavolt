@@ -6,6 +6,7 @@ import { usePlay } from "./PlayProvider";
 import LiveFeed from "./LiveFeed";
 import QuoteTicker from "@/components/ui/QuoteTicker";
 import { useToast } from "@/components/ui/Toast";
+import { useLivePrice } from "@/lib/useLivePrice";
 import { sfx } from "@/lib/sound";
 import { usdc } from "@/lib/money";
 
@@ -31,12 +32,13 @@ export default function CandleGame() {
   useEffect(() => setMounted(true), []);
   const modeRef = useRef(mode);
   modeRef.current = mode;
+  const liveBtc = useLivePrice(63500);
 
-  const price = useRef(63250);
+  const price = useRef(63500);
   const cur = useRef<Record<number, Candle>>({
-    60: { open: 63250, high: 63250, low: 63250, close: 63250 },
-    180: { open: 63250, high: 63250, low: 63250, close: 63250 },
-    300: { open: 63250, high: 63250, low: 63250, close: 63250 },
+    60: { open: 63500, high: 63500, low: 63500, close: 63500 },
+    180: { open: 63500, high: 63500, low: 63500, close: 63500 },
+    300: { open: 63500, high: 63500, low: 63500, close: 63500 },
   });
   const hist = useRef<Record<number, Candle[]>>({ 60: [], 180: [], 300: [] });
   const bucket = useRef<Record<number, number>>({});
@@ -44,26 +46,11 @@ export default function CandleGame() {
   const flash = useRef<Record<number, { win: boolean; at: number } | null>>({ 60: null, 180: null, 300: null });
 
   useEffect(() => {
-    let spare: number | null = null;
-    const gauss = () => {
-      if (spare !== null) {
-        const v = spare;
-        spare = null;
-        return v;
-      }
-      let u = 0;
-      let v = 0;
-      while (u === 0) u = Math.random();
-      while (v === 0) v = Math.random();
-      const r = Math.sqrt(-2 * Math.log(u));
-      spare = r * Math.sin(2 * Math.PI * v);
-      return r * Math.cos(2 * Math.PI * v);
-    };
     for (const tf of TFS) bucket.current[tf.sec] = Math.floor(Date.now() / (tf.sec * 1000));
 
     // seed varied past candles (independent per timeframe) so the strip isn't empty/identical
     for (const tf of TFS) {
-      let base = 63250 + (Math.random() - 0.5) * 400;
+      let base = 63500 + (Math.random() - 0.5) * 400;
       const arr: Candle[] = [];
       for (let i = 0; i < 10; i++) {
         const open = base;
@@ -79,7 +66,7 @@ export default function CandleGame() {
     }
 
     const id = setInterval(() => {
-      price.current = Math.max(1000, price.current + price.current * 0.0007 * gauss());
+      price.current = liveBtc.getPrice(); // real BTC/USD
       const p = price.current;
       const now = Date.now();
       for (const tf of TFS) {
@@ -107,7 +94,7 @@ export default function CandleGame() {
         }
       }
       force((t) => t + 1);
-    }, 120);
+    }, 70);
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -152,7 +139,7 @@ export default function CandleGame() {
       </aside>
 
       <main className="relative flex min-w-0 flex-1 flex-col gap-4 overflow-y-auto p-4 md:p-5">
-        <LiveFeed className="absolute bottom-3 right-3 z-30 hidden w-52 xl:block" />
+        <LiveFeed className="absolute bottom-3 left-3 z-30 hidden w-52 xl:block" />
         <Featured tf={TFS[0]} c={cur.current[60]} hist={hist.current[60]} bet={bet.current[60]} flash={flash.current[60]} now={now} stake={stake} onBet={place} />
         <div className="grid shrink-0 grid-cols-1 gap-4 sm:grid-cols-2">
           {TFS.slice(1).map((tf) => (
@@ -200,33 +187,24 @@ function CandleStick({ c, w = "w-full", glow = true }: { c: Candle; w?: string; 
   );
 }
 
-// row of last-N up/down results
-function Results({ hist, n = 10 }: { hist: Candle[]; n?: number }) {
-  const last = hist.slice(-n);
+// vertical column of the last-N up/down results (newest on top)
+function ResultsV({ hist, n = 9 }: { hist: Candle[]; n?: number }) {
+  const last = hist.slice(-n).reverse();
   return (
-    <div className="flex items-center gap-1">
-      <span className="mr-1 font-mono text-[9px] tracking-widest text-faint">LAST</span>
+    <div className="flex flex-col items-center justify-center gap-1.5">
+      <span className="font-mono text-[9px] tracking-widest text-faint">LAST</span>
       {Array.from({ length: n }).map((_, i) => {
-        const c = last[last.length - n + i];
-        if (!c) return <span key={i} className="h-3 w-3 rounded-[2px] border border-line" />;
+        const c = last[i];
+        if (!c) return <span key={i} className="h-7 w-7 rounded-md border border-line/60" />;
         const up = c.close >= c.open;
-        return <span key={i} className="grid h-3.5 w-3.5 place-items-center rounded-[2px] text-[8px] font-black" style={{ background: up ? "rgba(57,255,20,0.22)" : "rgba(255,43,214,0.22)", color: up ? "#39ff14" : "#ff2bd6" }}>{up ? "▲" : "▼"}</span>;
-      })}
-    </div>
-  );
-}
-
-// small previous candles strip
-function PrevCandles({ hist, n = 5 }: { hist: Candle[]; n?: number }) {
-  const last = hist.slice(-n);
-  return (
-    <div className="flex h-full items-stretch gap-1.5">
-      {Array.from({ length: n }).map((_, i) => {
-        const c = last[last.length - n + i];
         return (
-          <div key={i} className="h-full w-5 opacity-80">
-            {c ? <CandleStick c={c} glow={false} /> : <div className="h-full w-full" />}
-          </div>
+          <span
+            key={i}
+            className="grid h-7 w-7 place-items-center rounded-md text-[14px] font-black"
+            style={{ background: up ? "rgba(57,255,20,0.16)" : "rgba(255,43,214,0.16)", color: up ? "#39ff14" : "#ff2bd6", border: `1px solid ${up ? "rgba(57,255,20,.5)" : "rgba(255,43,214,.5)"}`, boxShadow: `0 0 8px ${up ? "rgba(57,255,20,.3)" : "rgba(255,43,214,.3)"}` }}
+          >
+            {up ? "▲" : "▼"}
+          </span>
         );
       })}
     </div>
@@ -254,20 +232,12 @@ function Featured({ tf, c, hist, bet, flash, now, stake, onBet }: any) {
         <span className="flex items-center gap-1.5 border border-gold/60 bg-gold/15 px-3 py-1 font-display text-sm font-black tracking-widest text-gold clip animate-glow"><Flame size={15} /> {tf.label} · HOT</span>
       </div>
 
-      <div className="mb-3"><Results hist={hist} n={10} /></div>
-
-      {/* body: prev candles | big candle | side info */}
-      <div className="grid min-h-0 flex-1 grid-cols-[auto_1fr_auto] items-stretch gap-4">
-        <div className="hidden py-2 sm:block"><PrevCandles hist={hist} n={5} /></div>
+      {/* body: big candle | side info | vertical results */}
+      <div className="grid min-h-0 flex-1 grid-cols-[1fr_auto_auto] items-stretch gap-4">
         <div className="relative min-h-0">
           <CandleStick c={c} />
-          <div className="absolute left-1 top-1 font-mono text-[10px] leading-relaxed text-faint">
-            <div>O {c.open.toFixed(0)}</div>
-            <div className="text-lime">H {c.high.toFixed(0)}</div>
-            <div className="text-magenta">L {c.low.toFixed(0)}</div>
-          </div>
         </div>
-        <div className="flex w-[170px] flex-col items-center justify-center gap-3">
+        <div className="flex w-[160px] flex-col items-center justify-center gap-3">
           <div className="tabular text-center font-display text-4xl font-black text-txt neon-cyan">${c.close.toLocaleString("en-US", { maximumFractionDigits: 0 })}</div>
           <div className={`tabular text-sm font-bold ${up ? "text-lime" : "text-magenta"}`}>{up ? "▲" : "▼"} {pct >= 0 ? "+" : ""}{pct.toFixed(2)}%</div>
           <div className="relative grid place-items-center">
@@ -278,6 +248,7 @@ function Featured({ tf, c, hist, bet, flash, now, stake, onBet }: any) {
             </div>
           </div>
         </div>
+        <ResultsV hist={hist} n={9} />
       </div>
 
       <div className="mt-4 shrink-0">
@@ -288,9 +259,9 @@ function Featured({ tf, c, hist, bet, flash, now, stake, onBet }: any) {
             <Lock size={18} /> BETTING LOCKED · opens next candle
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-3">
-            <BigBtn dir="up" onClick={() => onBet(tf.sec, "up")} stake={stake} />
-            <BigBtn dir="down" onClick={() => onBet(tf.sec, "down")} stake={stake} />
+          <div className="flex items-center justify-center gap-10">
+            <RoundBtn dir="up" onClick={() => onBet(tf.sec, "up")} stake={stake} />
+            <RoundBtn dir="down" onClick={() => onBet(tf.sec, "down")} stake={stake} />
           </div>
         )}
       </div>
@@ -305,7 +276,6 @@ function Mini({ tf, c, hist, bet, flash, now, onBet }: any) {
   const flashing = flash && now - flash.at < 1300;
   return (
     <div className="panel clip flex items-center gap-3 p-4" style={{ borderColor: flashing ? (flash.win ? "#39ff14" : "#ff2bd6") : undefined }}>
-      <div className="hidden h-20 py-1 md:block"><PrevCandles hist={hist} n={3} /></div>
       <div className="h-20 w-10 shrink-0"><CandleStick c={c} /></div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between">
@@ -341,12 +311,19 @@ function BetState({ bet, close, big }: { bet: Bet; close: number; big?: boolean 
   );
 }
 
-function BigBtn({ dir, onClick, stake }: { dir: "up" | "down"; onClick: () => void; stake: number }) {
+function RoundBtn({ dir, onClick, stake }: { dir: "up" | "down"; onClick: () => void; stake: number }) {
   const up = dir === "up";
   return (
-    <button onClick={onClick} className={`clip flex items-center justify-center gap-2 py-4 font-display text-xl font-black tracking-widest transition ${up ? "border border-lime bg-lime/15 text-lime hover:bg-lime/25" : "border border-magenta bg-magenta/15 text-magenta hover:bg-magenta/25"}`} style={{ boxShadow: `0 0 18px ${up ? "rgba(57,255,20,.3)" : "rgba(255,43,214,.3)"}` }}>
-      {up ? <ArrowUp size={24} /> : <ArrowDown size={24} />} {dir.toUpperCase()}
-      <span className="font-mono text-[11px] opacity-70">{usdc(stake)}</span>
+    <button
+      onClick={onClick}
+      className={`group grid h-28 w-28 place-items-center rounded-full border-2 transition hover:scale-105 ${up ? "border-lime bg-lime/15 text-lime hover:bg-lime/25" : "border-magenta bg-magenta/15 text-magenta hover:bg-magenta/25"}`}
+      style={{ boxShadow: `0 0 28px ${up ? "rgba(57,255,20,.45)" : "rgba(255,43,214,.45)"}` }}
+    >
+      <div className="flex flex-col items-center leading-none">
+        {up ? <ArrowUp size={36} strokeWidth={2.6} /> : <ArrowDown size={36} strokeWidth={2.6} />}
+        <span className="mt-1 font-display text-sm font-black tracking-widest">{dir.toUpperCase()}</span>
+        <span className="mt-0.5 font-mono text-[10px] opacity-70">{usdc(stake)}</span>
+      </div>
     </button>
   );
 }

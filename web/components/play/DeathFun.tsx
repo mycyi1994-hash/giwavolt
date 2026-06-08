@@ -216,7 +216,7 @@ export default function DeathFun() {
 
       {/* board */}
       <main className="relative grid min-w-0 flex-1 place-items-center overflow-auto p-6">
-        <LiveFeed className="absolute right-3 top-3 z-20 hidden w-56 lg:block" />
+        <LiveFeed className="absolute left-3 top-3 z-20 hidden w-56 lg:block" />
         <div className="absolute inset-x-0 top-4 flex flex-wrap items-center justify-center gap-x-6 gap-y-1 font-mono text-[12px]">
           <Tag label="SKULLS" value={`${death.bombs}`} cls="text-magenta" />
           <span className="flex items-center gap-1.5">

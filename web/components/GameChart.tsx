@@ -166,7 +166,9 @@ export default function GameChart({
     }
     const dt = TICK_MS / 1000;
 
-    // backfill history so the chart is already full of line on first paint
+    // backfill history so the chart is already full of line on first paint.
+    // Keep it tight around the anchor (strong reversion) so the whole line fits
+    // the visible band instead of drifting off-screen.
     (() => {
       const n0 = Date.now();
       const steps = Math.floor(VIEW_PAST_MS / TICK_MS);
@@ -174,12 +176,13 @@ export default function GameChart({
       let p = anchor;
       for (let i = steps; i >= 0; i--) {
         back.unshift({ t: n0 - i * TICK_MS, p });
-        p += p * VOL_PER_SQRT_SEC * Math.sqrt(dt) * gaussian() + (anchor - p) * 0.0006;
+        p += p * VOL_PER_SQRT_SEC * Math.sqrt(dt) * 0.5 * gaussian() + (anchor - p) * 0.05;
       }
       history.length = 0;
       for (const b of back) history.push(b);
-      price = back[back.length - 1].p;
+      price = anchor + (back[back.length - 1].p - anchor) * 0.4;
       renderPrice = price;
+      range = { min: price - (MIN_ROWS * step) / 2, max: price + (MIN_ROWS * step) / 2 };
     })();
 
     let lastTick = Date.now();
