@@ -165,6 +165,23 @@ export default function GameChart({
       return r * Math.cos(2 * Math.PI * v);
     }
     const dt = TICK_MS / 1000;
+
+    // backfill history so the chart is already full of line on first paint
+    (() => {
+      const n0 = Date.now();
+      const steps = Math.floor(VIEW_PAST_MS / TICK_MS);
+      const back: { t: number; p: number }[] = [];
+      let p = anchor;
+      for (let i = steps; i >= 0; i--) {
+        back.unshift({ t: n0 - i * TICK_MS, p });
+        p += p * VOL_PER_SQRT_SEC * Math.sqrt(dt) * gaussian() + (anchor - p) * 0.0006;
+      }
+      history.length = 0;
+      for (const b of back) history.push(b);
+      price = back[back.length - 1].p;
+      renderPrice = price;
+    })();
+
     let lastTick = Date.now();
     function stepPrice(now: number) {
       while (now - lastTick >= TICK_MS) {
@@ -363,13 +380,27 @@ export default function GameChart({
           roundRect(ctx, x0 + 1.5, yTop + 1.5, cw - 3, ch - 3, 3);
           ctx.fill();
           ctx.shadowBlur = 0;
-          ctx.strokeStyle = `rgba(${r},${g},${bl},${(0.3 + inten * 0.6).toFixed(3)})`;
-          ctx.lineWidth = glow ? 1.4 : 1;
+          const hot = inten > 0.7;
+          ctx.strokeStyle = isHover ? "#ffffff" : `rgba(${r},${g},${bl},${(0.3 + inten * 0.65).toFixed(3)})`;
+          ctx.lineWidth = hot ? 2 : glow ? 1.4 : 1;
           ctx.stroke();
-          if (ch > 13 && cw > 24) {
-            ctx.font = inten > 0.7 ? "800 12px var(--font-display, sans-serif)" : "600 11px var(--font-mono, monospace)";
-            ctx.fillStyle = isHover ? "#06060e" : inten > 0.7 ? `rgba(255,255,255,${(0.7 + inten * 0.3).toFixed(3)})` : `rgba(233,243,255,${(0.5 + inten * 0.5).toFixed(3)})`;
-            ctx.fillText(fmtMult(m), (x0 + x1) / 2, (yTop + yBot) / 2);
+          // multiplier label — scales with the cell, big payouts get loud
+          if (ch > 11 && cw > 20) {
+            const fs = Math.max(9, Math.min(ch * 0.5, cw * 0.42, 30));
+            const mx = (x0 + x1) / 2;
+            const my = (yTop + yBot) / 2;
+            ctx.font = `${hot ? 900 : inten > 0.4 ? 700 : 600} ${fs.toFixed(0)}px ${hot ? "var(--font-display, sans-serif)" : "var(--font-mono, monospace)"}`;
+            if (hot && !isHover) {
+              // dark outline so the bright number pops, + glow
+              ctx.lineWidth = Math.max(2, fs * 0.14);
+              ctx.strokeStyle = "rgba(6,6,14,0.85)";
+              ctx.strokeText(fmtMult(m), mx, my);
+              ctx.shadowColor = `rgba(${r},${g},${bl},0.95)`;
+              ctx.shadowBlur = 8 + inten * 10;
+            }
+            ctx.fillStyle = isHover ? "#06060e" : hot ? `rgb(255,${Math.round(245 - inten * 30)},${Math.round(210 - inten * 120)})` : `rgba(233,243,255,${(0.5 + inten * 0.5).toFixed(3)})`;
+            ctx.fillText(fmtMult(m), mx, my);
+            ctx.shadowBlur = 0;
             ctx.font = "600 11px var(--font-mono, monospace)";
           }
         }
@@ -432,21 +463,21 @@ export default function GameChart({
 
         // big vertical "LOCKED" — one bold letter per line, glowing
         const letters = "LOCKED".split("");
-        const lh = Math.min(40, (bot - top - 4 * m) / letters.length);
-        const startY = (top + bot) / 2 - ((letters.length - 1) * lh) / 2;
+        const lh = Math.min(56, (bot - top - 3 * m) / (letters.length + 1));
+        const startY = (top + bot) / 2 - (letters.length * lh) / 2;
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        ctx.font = `900 ${Math.round(lh * 0.82)}px var(--font-display, sans-serif)`;
+        ctx.font = `900 ${Math.round(lh * 0.9)}px var(--font-display, sans-serif)`;
         ctx.shadowColor = "rgba(255,43,214,1)";
         letters.forEach((ch, i) => {
-          ctx.shadowBlur = 14 + pulse * 14;
+          ctx.shadowBlur = 16 + pulse * 16;
           ctx.fillStyle = `rgba(255,${Math.round(110 + pulse * 90)},235,1)`;
           ctx.fillText(ch, cx, startY + i * lh);
         });
         ctx.shadowBlur = 0;
-        ctx.font = "700 11px var(--font-mono, monospace)";
-        ctx.fillStyle = "rgba(0,229,255,0.85)";
-        ctx.fillText("< 10s", cx, startY + letters.length * lh - lh * 0.1);
+        ctx.font = `800 ${Math.round(lh * 0.32)}px var(--font-display, sans-serif)`;
+        ctx.fillStyle = "rgba(0,229,255,0.95)";
+        ctx.fillText("TOO LATE", cx, startY + letters.length * lh + lh * 0.1);
       }
 
       // ---- active bet markers ----

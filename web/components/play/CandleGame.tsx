@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowUp, ArrowDown, Bitcoin, Flame, Lock } from "lucide-react";
 import { usePlay } from "./PlayProvider";
+import LiveFeed from "./LiveFeed";
+import QuoteTicker from "@/components/ui/QuoteTicker";
 import { useToast } from "@/components/ui/Toast";
 import { sfx } from "@/lib/sound";
 import { usdc } from "@/lib/money";
@@ -58,6 +60,23 @@ export default function CandleGame() {
       return r * Math.cos(2 * Math.PI * v);
     };
     for (const tf of TFS) bucket.current[tf.sec] = Math.floor(Date.now() / (tf.sec * 1000));
+
+    // seed varied past candles (independent per timeframe) so the strip isn't empty/identical
+    for (const tf of TFS) {
+      let base = 63250 + (Math.random() - 0.5) * 400;
+      const arr: Candle[] = [];
+      for (let i = 0; i < 10; i++) {
+        const open = base;
+        const close = open + (Math.random() - 0.5) * base * 0.005;
+        const high = Math.max(open, close) + Math.random() * base * 0.0025;
+        const low = Math.min(open, close) - Math.random() * base * 0.0025;
+        arr.push({ open, high, low, close });
+        base = close;
+      }
+      hist.current[tf.sec] = arr;
+      cur.current[tf.sec] = { open: base, high: base, low: base, close: base };
+      if (tf.sec === 60) price.current = base;
+    }
 
     const id = setInterval(() => {
       price.current = Math.max(1000, price.current + price.current * 0.0007 * gauss());
@@ -127,15 +146,13 @@ export default function CandleGame() {
             ))}
           </div>
         </div>
-        <div className="mt-auto space-y-1.5 border-t border-line pt-3 font-sans text-[12px] leading-relaxed text-muted">
-          <p>
-            <span className="text-gold">›</span> Call the next <span className="text-lime">UP</span> / <span className="text-magenta">DOWN</span> close. Win <span className="text-lime">{PAYOUT}×</span>.
-          </p>
-          <p className="text-faint">BTC only · betting locks at the candle’s halfway point.</p>
+        <div className="mt-auto">
+          <QuoteTicker />
         </div>
       </aside>
 
-      <main className="flex min-w-0 flex-1 flex-col gap-4 overflow-y-auto p-4 md:p-5">
+      <main className="relative flex min-w-0 flex-1 flex-col gap-4 overflow-y-auto p-4 md:p-5">
+        <LiveFeed className="absolute bottom-3 right-3 z-30 hidden w-52 xl:block" />
         <Featured tf={TFS[0]} c={cur.current[60]} hist={hist.current[60]} bet={bet.current[60]} flash={flash.current[60]} now={now} stake={stake} onBet={place} />
         <div className="grid shrink-0 grid-cols-1 gap-4 sm:grid-cols-2">
           {TFS.slice(1).map((tf) => (

@@ -5,6 +5,7 @@ import { Plus, RotateCcw, Wallet } from "lucide-react";
 import { usePlay } from "./PlayProvider";
 import ModeToggle from "./ModeToggle";
 import { useDeposit } from "@/components/account/DepositModal";
+import QuoteTicker from "@/components/ui/QuoteTicker";
 import { sfx } from "@/lib/sound";
 import { usdc, krw } from "@/lib/money";
 
@@ -105,12 +106,8 @@ export default function TapPanel({ price, bid, onBid }: { price: number; bid: nu
         </div>
       )}
 
-      <div className="mt-auto space-y-1.5 border-t border-line pt-3 font-sans text-[12px] leading-relaxed text-muted">
-        <p>
-          <span className="text-cyan">›</span> Tap a cell ≥ <span className="text-magenta">10s</span> out. Win{" "}
-          <span className="text-lime">stake × multiplier</span>; tap again to cancel.
-        </p>
-        <p className="text-faint">{real ? "Deposited balance — no per-bet signatures." : "Demo uses play money — no real funds."}</p>
+      <div className="mt-auto">
+        <QuoteTicker />
       </div>
     </aside>
   );

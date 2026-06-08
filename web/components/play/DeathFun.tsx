@@ -5,9 +5,11 @@ import { Skull, Shuffle, Hand, Gem } from "lucide-react";
 import { usePlay } from "./PlayProvider";
 import ModeToggle from "./ModeToggle";
 import AnimatedNumber from "@/components/ui/AnimatedNumber";
+import QuoteTicker from "@/components/ui/QuoteTicker";
+import LiveFeed from "./LiveFeed";
 import { useToast } from "@/components/ui/Toast";
 import { sfx } from "@/lib/sound";
-import { newBoard, multiplierAfter, revealAll, DIFFICULTIES, DIFFICULTY_ORDER, firstPickWinPct, totalTiles } from "@/lib/death";
+import { newBoard, multiplierAfter, revealAll, DIFFICULTIES, DIFFICULTY_ORDER, totalTiles } from "@/lib/death";
 import type { Difficulty } from "@/lib/types";
 import { usdc, krw } from "@/lib/money";
 
@@ -38,7 +40,6 @@ export default function DeathFun() {
   const total = totalTiles(death);
   const value = +(death.stake * death.multiplier).toFixed(2);
   const nextMult = multiplierAfter(death.picks + 1, death.bombs, total);
-  const winPct = firstPickWinPct(death.bombs, total);
 
   // dynamic tile size — bigger boards so even ULTRA stays clickable
   const gap = death.dim > 14 ? 3 : death.dim > 8 ? 5 : 8;
@@ -208,17 +209,14 @@ export default function DeathFun() {
           </button>
         )}
 
-        <div className="mt-auto space-y-1 border-t border-line pt-3 font-sans text-[12px] leading-relaxed text-muted">
-          <p>
-            <span className="text-magenta">›</span> {death.bombs} skulls / {total} tiles · first-tap safe{" "}
-            <span className="text-lime">{winPct.toFixed(1)}%</span>
-          </p>
-          <p className="text-faint">STOP locks your win · switch tabs anytime, it waits.</p>
+        <div className="mt-auto">
+          <QuoteTicker />
         </div>
       </aside>
 
       {/* board */}
       <main className="relative grid min-w-0 flex-1 place-items-center overflow-auto p-6">
+        <LiveFeed className="absolute right-3 top-3 z-20 hidden w-56 lg:block" />
         <div className="absolute inset-x-0 top-4 flex flex-wrap items-center justify-center gap-x-6 gap-y-1 font-mono text-[12px]">
           <Tag label="SKULLS" value={`${death.bombs}`} cls="text-magenta" />
           <span className="flex items-center gap-1.5">
