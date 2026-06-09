@@ -7,6 +7,7 @@
     "test": "hardhat test",
     "deploy:giwa": "hardhat run scripts/deploy.ts --network giwaSepolia",
     "deploy:volttap": "hardhat run scripts/deployVoltTap.ts --network giwaSepolia",
+    "deploy:testkrw": "hardhat run scripts/deployTestKRW.ts --network giwaSepolia",
     "deploy:local": "hardhat run scripts/deploy.ts --network hardhat",
     "e2e": "hardhat run scripts/e2e.ts --network hardhat"
   },

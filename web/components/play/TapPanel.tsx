@@ -9,8 +9,10 @@ import ModeToggle from "./ModeToggle";
 import QuoteTicker from "@/components/ui/QuoteTicker";
 import { sfx } from "@/lib/sound";
 import { usdc, krw } from "@/lib/money";
-import { useVoltTap } from "@/lib/useVoltTap";
 import { STAKE_ETH, EDGE_BPS } from "@/lib/volttap";
+import { useTestKrw } from "@/lib/useTestKrw";
+import { fmtKrw } from "@/lib/testkrw";
+import FaucetButton from "@/components/account/FaucetButton";
 
 const PRESETS = [1, 5, 10, 100];
 
@@ -19,10 +21,10 @@ export default function TapPanel({ price, bid, onBid }: { price: number; bid: nu
   const [custom, setCustom] = useState("");
   const real = mode === "real";
 
-  // REAL mode reads the native ETH balance straight off the chain.
+  // REAL mode: tKRW is the play balance; native ETH is just gas.
   const { address } = useAccount();
   const { data: ethBal } = useBalance({ address, query: { enabled: real, refetchInterval: 12_000 } });
-  const vt = useVoltTap();
+  const tkrw = useTestKrw();
 
   const applyCustom = (v: string) => {
     setCustom(v);
@@ -48,11 +50,11 @@ export default function TapPanel({ price, bid, onBid }: { price: number; bid: nu
       {/* balance */}
       {real ? (
         <div>
-          <div className="mb-1 font-mono text-[10px] tracking-[0.2em] text-faint">WALLET (GIWA SEPOLIA)</div>
-          <div className="tabular text-[28px] font-black leading-none text-magenta neon-magenta">
-            {ethBal ? (+formatEther(ethBal.value)).toFixed(4) : "—"} <span className="text-base">ETH</span>
+          <div className="mb-1 font-mono text-[10px] tracking-[0.2em] text-faint">TEST KRW (GIWA SEPOLIA)</div>
+          <div className="tabular text-[28px] font-black leading-none text-magenta neon-magenta">{fmtKrw(tkrw.balance)}</div>
+          <div className="tabular text-[11px] text-faint">
+            gas: {ethBal ? (+formatEther(ethBal.value)).toFixed(4) : "—"} ETH
           </div>
-          <div className="tabular text-[11px] text-faint">{ethBal ? usdc(+formatEther(ethBal.value) * price) : "connect wallet"}</div>
         </div>
       ) : (
         <div>
@@ -114,18 +116,11 @@ export default function TapPanel({ price, bid, onBid }: { price: number; bid: nu
 
       {/* funds / status */}
       {real ? (
-        <div className="panel clip px-3 py-2.5 font-mono text-[10px] leading-relaxed text-faint">
-          {!vt.enabled ? (
-            <span className="text-magenta">VoltTap not deployed — set NEXT_PUBLIC_VOLTTAP_ADDRESS to enable REAL taps.</span>
-          ) : (
-            <>
-              <div className="flex items-center justify-between">
-                <span className="tracking-[0.15em]">HOUSE BANKROLL</span>
-                <span className="tabular text-lime">{vt.bankrollWei != null ? (+formatEther(vt.bankrollWei)).toFixed(3) + " ETH" : "…"}</span>
-              </div>
-              <div className="mt-1 text-faint">Each tap is one signed tx from your wallet (gas + stake). No deposit needed.</div>
-            </>
-          )}
+        <div className="flex flex-col gap-2">
+          <FaucetButton enabled={tkrw.enabled} onClaimed={() => tkrw.refetch()} />
+          <div className="panel clip px-3 py-2 font-mono text-[10px] leading-relaxed text-faint">
+            Free test money — no real value. <span className="text-magenta">tKRW</span> is your play balance; the bit of ETH is just gas for on-chain actions.
+          </div>
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-2">
