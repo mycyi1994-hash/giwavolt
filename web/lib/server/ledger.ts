@@ -1,96 +1,77 @@
-// Off-chain play-money ledger (server-side). Maps a wallet address to a tKRW
-// game balance. This is the heart of the "no-signature" model: players never
-// sign to bet — every game's stake/payout just adjusts this balance through the
-// /api/account/* routes. Withdrawals turn this balance back into real on-chain
-// tKRW (pushed by the house wallet).
+// Server-authoritative off-chain ledger (Postgres / Supabase).
 //
-// Persistence: a JSON file under .data/. Fine for local dev / a single server.
-// On serverless (Vercel) the filesystem is ephemeral — swap this for a real DB
-// (Postgres/KV) before relying on it in production.
-//
-// SECURITY NOTE: settlement is client-reported (the browser tells the server the
-// stake/payout deltas), so this is cheatable. It's a testnet demo to prove the
-// flow; real money needs server-authoritative outcomes (oracles / server RNG).
+// Balances live in the DB; debits are atomic and can't go negative, so the
+// browser can't conjure funds. Game *outcomes* are decided server-side too
+// (see lib/server/fair.ts + /api/game/*), which is what makes this not cheatable
+// — unlike the old client-reported /api/account/adjust.
 
-import { promises as fs } from "fs";
-import path from "path";
-
-const FILE = path.join(process.cwd(), ".data", "ledger.json");
-
-type Store = { balances: Record<string, number>; lastClaim: Record<string, number> };
+import { getSql } from "./db";
 
 const norm = (a: string) => a.toLowerCase();
-const round2 = (n: number) => Math.max(0, Math.round(n * 100) / 100);
+const round2 = (n: number) => Math.round(n * 100) / 100;
 
-// Serialise read-modify-write so concurrent requests can't clobber each other.
-let lock: Promise<unknown> = Promise.resolve();
-function withLock<T>(fn: () => Promise<T>): Promise<T> {
-  const run = lock.then(fn, fn);
-  lock = run.then(
-    () => undefined,
-    () => undefined
-  );
-  return run as Promise<T>;
+export async function ensureAccount(address: string): Promise<void> {
+  const db = getSql();
+  await db`insert into accounts (address) values (${norm(address)}) on conflict (address) do nothing`;
 }
 
-async function read(): Promise<Store> {
-  try {
-    return JSON.parse(await fs.readFile(FILE, "utf8")) as Store;
-  } catch {
-    return { balances: {}, lastClaim: {} };
-  }
+export async function getBalance(address: string): Promise<number> {
+  const db = getSql();
+  const r = await db`select balance from accounts where address=${norm(address)}`;
+  return r.length ? Number(r[0].balance) : 0;
 }
 
-async function write(s: Store): Promise<void> {
-  await fs.mkdir(path.dirname(FILE), { recursive: true });
-  await fs.writeFile(FILE, JSON.stringify(s, null, 2));
+// Atomic debit: only succeeds if the balance covers it. Returns the new balance,
+// or null if there weren't enough funds.
+export async function debit(address: string, amount: number, kind: string, ref?: string): Promise<number | null> {
+  const db = getSql();
+  const a = norm(address);
+  const amt = round2(amount);
+  const r = await db`update accounts set balance = balance - ${amt} where address=${a} and balance >= ${amt} returning balance`;
+  if (!r.length) return null;
+  await db`insert into txns (address, delta, kind, ref) values (${a}, ${-amt}, ${kind}, ${ref ?? null})`;
+  return Number(r[0].balance);
 }
 
-export async function getBalance(addr: string): Promise<number> {
-  const s = await read();
-  return s.balances[norm(addr)] ?? 0;
+export async function credit(address: string, amount: number, kind: string, ref?: string): Promise<number> {
+  const db = getSql();
+  const a = norm(address);
+  const amt = round2(amount);
+  await ensureAccount(a);
+  const r = await db`update accounts set balance = balance + ${amt} where address=${a} returning balance`;
+  await db`insert into txns (address, delta, kind, ref) values (${a}, ${amt}, ${kind}, ${ref ?? null})`;
+  return Number(r[0].balance);
 }
 
-// Apply a signed delta (negative = stake, positive = payout/refund). Clamped ≥ 0.
-export async function adjustBalance(addr: string, delta: number): Promise<number> {
-  return withLock(async () => {
-    const s = await read();
-    const k = norm(addr);
-    const next = round2((s.balances[k] ?? 0) + delta);
-    s.balances[k] = next;
-    await write(s);
-    return next;
-  });
+// Generic signed adjust, clamped ≥ 0. Kept only for back-compat with the old
+// client-reported flow; server-authoritative games use debit/credit instead.
+export async function adjustBalance(address: string, delta: number): Promise<number> {
+  const db = getSql();
+  const a = norm(address);
+  await ensureAccount(a);
+  const r = await db`update accounts set balance = greatest(0, balance + ${round2(delta)}) where address=${a} returning balance`;
+  await db`insert into txns (address, delta, kind, ref) values (${a}, ${round2(delta)}, 'adjust', null)`;
+  return Number(r[0].balance);
 }
 
-export async function setBalance(addr: string, value: number): Promise<number> {
-  return withLock(async () => {
-    const s = await read();
-    const next = round2(value);
-    s.balances[norm(addr)] = next;
-    await write(s);
-    return next;
-  });
-}
-
-// Faucet credit with an optional cooldown. Returns the new balance or an error.
 export async function claim(
-  addr: string,
+  address: string,
   amount: number,
   cooldownMs: number
 ): Promise<{ ok: true; balance: number } | { ok: false; error: string }> {
-  return withLock(async () => {
-    const s = await read();
-    const k = norm(addr);
-    const now = Date.now();
-    const prev = s.lastClaim[k];
-    if (prev && cooldownMs > 0 && now - prev < cooldownMs) {
-      const sec = Math.ceil((cooldownMs - (now - prev)) / 1000);
-      return { ok: false as const, error: `Wait ~${sec}s before claiming again.` };
+  const db = getSql();
+  const a = norm(address);
+  await ensureAccount(a);
+  if (cooldownMs > 0) {
+    const rows = await db`select last_claim from claims where address=${a}`;
+    if (rows.length && rows[0].last_claim) {
+      const last = new Date(rows[0].last_claim).getTime();
+      const wait = cooldownMs - (Date.now() - last);
+      if (wait > 0) return { ok: false, error: `Wait ~${Math.ceil(wait / 1000)}s before claiming again.` };
     }
-    s.lastClaim[k] = now;
-    s.balances[k] = round2((s.balances[k] ?? 0) + amount);
-    await write(s);
-    return { ok: true as const, balance: s.balances[k] };
-  });
+  }
+  await db`insert into claims (address, last_claim) values (${a}, now()) on conflict (address) do update set last_claim = now()`;
+  const r = await db`update accounts set balance = balance + ${round2(amount)} where address=${a} returning balance`;
+  await db`insert into txns (address, delta, kind, ref) values (${a}, ${round2(amount)}, 'claim', null)`;
+  return { ok: true, balance: Number(r[0].balance) };
 }
