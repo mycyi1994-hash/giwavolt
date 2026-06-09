@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 // How much each claim hands out. tKRW is play money; the dust ETH is just so a
 // fresh wallet (0 ETH) can pay gas for deposits / future on-chain actions.
 const DRIP_TKRW = parseEther(process.env.FAUCET_DRIP_TKRW ?? "1000000"); // 1,000,000 tKRW
-const DRIP_ETH = parseEther(process.env.FAUCET_DRIP_ETH ?? "0.002");
+const DRIP_ETH = parseEther(process.env.FAUCET_DRIP_ETH ?? "0.001");
 const COOLDOWN_MS = Number(process.env.FAUCET_COOLDOWN_MS ?? 8 * 60 * 60 * 1000);
 
 // Per-address cooldown. In-memory: resets on cold start / redeploy, which is

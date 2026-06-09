@@ -40,7 +40,7 @@ NEXT_PUBLIC_TESTKRW_ADDRESS=0x...        # token address from step 1
 FAUCET_PRIVATE_KEY=0x...                 # the FAUCET_WALLET's private key (server-only!)
 # optional:
 # FAUCET_DRIP_TKRW=1000000
-# FAUCET_DRIP_ETH=0.002
+# FAUCET_DRIP_ETH=0.001
 # FAUCET_COOLDOWN_MS=28800000
 ```
 
