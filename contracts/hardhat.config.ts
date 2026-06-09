@@ -1,3 +1,4 @@
+import "dotenv/config";
 import "@nomicfoundation/hardhat-toolbox";
 import { HardhatUserConfig, subtask } from "hardhat/config";
 import { TASK_COMPILE_SOLIDITY_GET_SOLC_BUILD } from "hardhat/builtin-tasks/task-names";
