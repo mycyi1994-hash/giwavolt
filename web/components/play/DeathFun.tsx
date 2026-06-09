@@ -11,18 +11,22 @@ import { useToast } from "@/components/ui/Toast";
 import { sfx } from "@/lib/sound";
 import { newBoard, multiplierAfter, revealAll, DIFFICULTIES, DIFFICULTY_ORDER, totalTiles } from "@/lib/death";
 import type { Difficulty } from "@/lib/types";
-import { usdc, krw } from "@/lib/money";
-
-const PRESETS = [1, 5, 10, 100];
+import { krw, amt, DEMO_STAKES, REAL_STAKES, defaultStake } from "@/lib/money";
+import ClaimButton from "./ClaimButton";
 
 export default function DeathFun() {
   const { mode, balance, adjust, death, setDeath } = usePlay();
+  const real = mode === "real";
+  const presets = real ? REAL_STAKES : DEMO_STAKES;
   const toast = useToast();
   const [stake, setStake] = useState(5);
   const [custom, setCustom] = useState("");
   const [diff, setDiff] = useState<Difficulty>("medium");
   const [shake, setShake] = useState(false);
   const [burst, setBurst] = useState(false);
+
+  // default stake follows the mode (USDC play money vs tKRW)
+  useEffect(() => setStake(defaultStake(mode === "real")), [mode]);
 
   useEffect(() => {
     if (!death) setDeath(newBoard(mode, diff));
@@ -69,7 +73,7 @@ export default function DeathFun() {
       setTimeout(() => setShake(false), 400);
       const tiles = revealAll({ ...death, tiles: death.tiles.map((t, k) => (k === i ? "skull" : t)) });
       setDeath({ ...death, tiles, status: "busted", cashout: 0 });
-      toast.push("skull", `BUSTED −${usdc(death.stake)}`, "hit a skull");
+      toast.push("skull", `BUSTED −${amt(death.mode === "real", death.stake)}`, "hit a skull");
     } else {
       sfx.reveal();
       const tiles = death.tiles.slice();
@@ -84,7 +88,7 @@ export default function DeathFun() {
     sfx.cashout();
     adjust(death.mode, cashout);
     setDeath({ ...death, tiles: revealAll(death), status: "stopped", cashout });
-    toast.push("cash", `CASHED OUT +${usdc(cashout)}`, `${death.multiplier.toFixed(2)}× · ${death.picks} safe`);
+    toast.push("cash", `CASHED OUT +${amt(death.mode === "real", cashout)}`, `${death.multiplier.toFixed(2)}× · ${death.picks} safe`);
     setBurst(true);
     setTimeout(() => setBurst(false), 1000);
   };
@@ -142,15 +146,16 @@ export default function DeathFun() {
         </div>
 
         <div>
-          <div className="mb-1 font-mono text-[10px] tracking-[0.2em] text-faint">BALANCE</div>
-          <div className="tabular text-[24px] font-black leading-none text-cyan neon-cyan">{usdc(balance[mode])}</div>
-          <div className="tabular text-[11px] text-faint">{krw(balance[mode])}</div>
+          <div className="mb-1 font-mono text-[10px] tracking-[0.2em] text-faint">{real ? "GAME BALANCE (tKRW)" : "BALANCE"}</div>
+          <div className={`tabular text-[24px] font-black leading-none ${real ? "text-magenta neon-magenta" : "text-cyan neon-cyan"}`}>{amt(real, balance[mode])}</div>
+          <div className="tabular text-[11px] text-faint">{real ? "off-chain · no signature" : krw(balance[mode])}</div>
+          {real && <ClaimButton className="mt-2 w-full" />}
         </div>
 
         <div className={playing ? "pointer-events-none opacity-40" : ""}>
-          <div className="mb-2 font-mono text-[10px] tracking-[0.2em] text-faint">BET SIZE</div>
+          <div className="mb-2 font-mono text-[10px] tracking-[0.2em] text-faint">BET SIZE ({real ? "tKRW" : "USDC"})</div>
           <div className="grid grid-cols-4 gap-1.5">
-            {PRESETS.map((b) => {
+            {presets.map((b) => {
               const active = b === stake && custom === "";
               return (
                 <button
@@ -160,11 +165,11 @@ export default function DeathFun() {
                     setCustom("");
                     setStake(b);
                   }}
-                  className={`clip py-2 font-mono text-[13px] font-bold tabular transition ${
+                  className={`clip py-2 font-mono text-[12px] font-bold tabular transition ${
                     active ? "border border-magenta bg-magenta/10 text-magenta" : "border border-line bg-ink-2 text-muted hover:text-txt"
                   }`}
                 >
-                  {b}
+                  {real ? b.toLocaleString() : b}
                 </button>
               );
             })}
@@ -177,13 +182,13 @@ export default function DeathFun() {
               placeholder="Custom amount"
               className="tabular w-full bg-transparent text-[14px] text-txt outline-none placeholder:text-faint"
             />
-            <span className="font-mono text-[11px] text-cyan">USDC</span>
+            <span className="font-mono text-[11px] text-cyan">{real ? "tKRW" : "USDC"}</span>
           </div>
         </div>
 
         {playing ? (
           <button onClick={stop} className="clip border border-lime bg-lime/15 py-3 font-display text-sm font-black tracking-widest text-lime animate-glow">
-            STOP · CASH OUT {usdc(value)}
+            STOP · CASH OUT {amt(real, value)}
           </button>
         ) : death.status === "idle" ? (
           <button
@@ -192,7 +197,7 @@ export default function DeathFun() {
             className="btn-neon clip bg-magenta/15 py-3 font-display text-sm font-black tracking-widest text-magenta disabled:opacity-40"
             style={{ borderColor: "rgba(255,43,214,.6)", boxShadow: "0 0 14px rgba(255,43,214,.3)" }}
           >
-            BET {usdc(stake)}
+            BET {amt(real, stake)}
           </button>
         ) : (
           <button onClick={stageReset} className="btn-neon clip flex items-center justify-center gap-1.5 bg-cyan/15 py-3 font-display text-sm font-black tracking-widest text-cyan">
@@ -225,7 +230,7 @@ export default function DeathFun() {
           </span>
           <span className="flex items-center gap-1.5">
             <span className="tracking-[0.2em] text-faint">{playing ? "VALUE" : "STAKE"}</span>
-            <AnimatedNumber value={playing ? value : death.stake} format={(n) => usdc(n)} className="tabular font-bold text-cyan" />
+            <AnimatedNumber value={playing ? value : death.stake} format={(n) => amt(real, n)} className="tabular font-bold text-cyan" />
           </span>
           {playing && <Tag label="NEXT" value={`${nextMult.toFixed(2)}×`} cls="text-faint" />}
         </div>
@@ -241,8 +246,8 @@ export default function DeathFun() {
             ))}
           </div>
 
-          {death.status === "busted" && <Banner cls="border-magenta text-magenta" icon={<Skull size={18} />} text={`BUSTED — lost ${usdc(death.stake)}`} />}
-          {death.status === "stopped" && <Banner cls="border-lime text-lime" icon={<Gem size={18} />} text={`CASHED OUT +${usdc(death.cashout)} (${death.multiplier.toFixed(2)}×)`} />}
+          {death.status === "busted" && <Banner cls="border-magenta text-magenta" icon={<Skull size={18} />} text={`BUSTED — lost ${amt(death.mode === "real", death.stake)}`} />}
+          {death.status === "stopped" && <Banner cls="border-lime text-lime" icon={<Gem size={18} />} text={`CASHED OUT +${amt(death.mode === "real", death.cashout)} (${death.multiplier.toFixed(2)}×)`} />}
           {death.status === "idle" && (
             <p className="font-mono text-[11px] tracking-wider text-faint">
               <Hand size={12} className="mr-1 inline" /> pick difficulty & bet — skulls form a hidden pattern

@@ -8,10 +8,10 @@ import QuoteTicker from "@/components/ui/QuoteTicker";
 import { useToast } from "@/components/ui/Toast";
 import { useLivePrice } from "@/lib/useLivePrice";
 import { sfx } from "@/lib/sound";
-import { usdc } from "@/lib/money";
+import { amt, DEMO_STAKES, REAL_STAKES, defaultStake } from "@/lib/money";
+import ClaimButton from "./ClaimButton";
 
 const PAYOUT = 1.9; // payout multiplier on a correct call
-const PRESETS = [1, 5, 10, 25];
 const TFS = [
   { sec: 60, label: "1m" },
   { sec: 180, label: "3m" },
@@ -25,11 +25,14 @@ type Candle = { open: number; high: number; low: number; close: number };
 
 export default function CandleGame() {
   const { mode, balance, adjust } = usePlay();
+  const real = mode === "real";
+  const presets = real ? REAL_STAKES : DEMO_STAKES;
   const toast = useToast();
   const [stake, setStake] = useState(5);
   const [, force] = useState(0);
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+  useEffect(() => setStake(defaultStake(mode === "real")), [mode]);
   const modeRef = useRef(mode);
   modeRef.current = mode;
   const liveBtc = useLivePrice(63500);
@@ -83,7 +86,7 @@ export default function CandleGame() {
             const win = p >= bt.open === (bt.dir === "up");
             adjust(modeRef.current, win ? bt.stake * PAYOUT : 0);
             win ? sfx.win() : sfx.lose();
-            toast.push(win ? "win" : "lose", `BTC ${tf.label} ${bt.dir.toUpperCase()} ${win ? "✓ +" + usdc(bt.stake * PAYOUT) : "✗ −" + usdc(bt.stake)}`, "candle closed");
+            toast.push(win ? "win" : "lose", `BTC ${tf.label} ${bt.dir.toUpperCase()} ${win ? "✓ +" + amt(modeRef.current === "real", bt.stake * PAYOUT) : "✗ −" + amt(modeRef.current === "real", bt.stake)}`, "candle closed");
             flash.current[tf.sec] = { win, at: now };
           }
           // archive the closed candle, open a fresh one
@@ -120,15 +123,17 @@ export default function CandleGame() {
           <Bitcoin size={16} /> NEXT CANDLE
         </div>
         <div>
-          <div className="mb-1 font-mono text-[10px] tracking-[0.2em] text-faint">{mode === "real" ? "DEPOSITED" : "PLAY BALANCE"}</div>
-          <div className="tabular text-[26px] font-black leading-none text-cyan neon-cyan">{usdc(balance[mode])}</div>
+          <div className="mb-1 font-mono text-[10px] tracking-[0.2em] text-faint">{real ? "GAME BALANCE (tKRW)" : "PLAY BALANCE"}</div>
+          <div className={`tabular text-[26px] font-black leading-none ${real ? "text-magenta neon-magenta" : "text-cyan neon-cyan"}`}>{amt(real, balance[mode])}</div>
+          {real && <div className="tabular mt-0.5 text-[11px] text-faint">off-chain · no signature</div>}
+          {real && <ClaimButton className="mt-2 w-full" />}
         </div>
         <div>
-          <div className="mb-2 font-mono text-[10px] tracking-[0.2em] text-faint">STAKE (USDC)</div>
+          <div className="mb-2 font-mono text-[10px] tracking-[0.2em] text-faint">STAKE ({real ? "tKRW" : "USDC"})</div>
           <div className="grid grid-cols-4 gap-1.5">
-            {PRESETS.map((b) => (
-              <button key={b} onClick={() => { sfx.select(); setStake(b); }} className={`clip py-2.5 font-mono text-[13px] font-bold tabular transition ${b === stake ? "border border-gold bg-gold/10 text-gold" : "border border-line bg-ink-2 text-muted hover:text-txt"}`}>
-                {b}
+            {presets.map((b) => (
+              <button key={b} onClick={() => { sfx.select(); setStake(b); }} className={`clip py-2.5 font-mono text-[12px] font-bold tabular transition ${b === stake ? "border border-gold bg-gold/10 text-gold" : "border border-line bg-ink-2 text-muted hover:text-txt"}`}>
+                {real ? b.toLocaleString() : b}
               </button>
             ))}
           </div>
@@ -140,10 +145,10 @@ export default function CandleGame() {
 
       <main className="relative flex min-w-0 flex-1 flex-col gap-4 overflow-y-auto p-4 md:p-5">
         <LiveFeed className="absolute bottom-3 left-3 z-30 hidden w-52 xl:block" />
-        <Featured tf={TFS[0]} c={cur.current[60]} hist={hist.current[60]} bet={bet.current[60]} flash={flash.current[60]} now={now} stake={stake} onBet={place} />
+        <Featured tf={TFS[0]} c={cur.current[60]} hist={hist.current[60]} bet={bet.current[60]} flash={flash.current[60]} now={now} stake={stake} real={real} onBet={place} />
         <div className="grid shrink-0 grid-cols-1 gap-4 sm:grid-cols-2">
           {TFS.slice(1).map((tf) => (
-            <Mini key={tf.sec} tf={tf} c={cur.current[tf.sec]} hist={hist.current[tf.sec]} bet={bet.current[tf.sec]} flash={flash.current[tf.sec]} now={now} onBet={place} />
+            <Mini key={tf.sec} tf={tf} c={cur.current[tf.sec]} hist={hist.current[tf.sec]} bet={bet.current[tf.sec]} flash={flash.current[tf.sec]} now={now} real={real} onBet={place} />
           ))}
         </div>
       </main>
@@ -211,7 +216,7 @@ function ResultsV({ hist, n = 9 }: { hist: Candle[]; n?: number }) {
   );
 }
 
-function Featured({ tf, c, hist, bet, flash, now, stake, onBet }: any) {
+function Featured({ tf, c, hist, bet, flash, now, stake, real, onBet }: any) {
   const { frac, s, locked } = remaining(tf.sec, now);
   const up = c.close >= c.open;
   const pct = ((c.close - c.open) / c.open) * 100;
@@ -253,15 +258,15 @@ function Featured({ tf, c, hist, bet, flash, now, stake, onBet }: any) {
 
       <div className="mt-4 shrink-0">
         {bet ? (
-          <BetState bet={bet} close={c.close} big />
+          <BetState bet={bet} close={c.close} real={real} big />
         ) : locked ? (
           <div className="clip flex items-center justify-center gap-2 border border-magenta/50 bg-magenta/10 py-4 font-display text-base font-black tracking-widest text-magenta">
             <Lock size={18} /> BETTING LOCKED · opens next candle
           </div>
         ) : (
           <div className="flex items-center justify-center gap-16">
-            <RoundBtn dir="up" onClick={() => onBet(tf.sec, "up")} stake={stake} />
-            <RoundBtn dir="down" onClick={() => onBet(tf.sec, "down")} stake={stake} />
+            <RoundBtn dir="up" onClick={() => onBet(tf.sec, "up")} stake={stake} real={real} />
+            <RoundBtn dir="down" onClick={() => onBet(tf.sec, "down")} stake={stake} real={real} />
           </div>
         )}
       </div>
@@ -269,7 +274,7 @@ function Featured({ tf, c, hist, bet, flash, now, stake, onBet }: any) {
   );
 }
 
-function Mini({ tf, c, hist, bet, flash, now, onBet }: any) {
+function Mini({ tf, c, hist, bet, flash, now, real, onBet }: any) {
   const { frac, s, locked } = remaining(tf.sec, now);
   const up = c.close >= c.open;
   const pct = ((c.close - c.open) / c.open) * 100;
@@ -285,7 +290,7 @@ function Mini({ tf, c, hist, bet, flash, now, onBet }: any) {
         <div className="tabular font-display text-xl font-black text-txt">${c.close.toLocaleString("en-US", { maximumFractionDigits: 0 })}</div>
         <div className={`tabular text-[12px] font-bold ${up ? "text-lime" : "text-magenta"}`}>{up ? "▲" : "▼"} {pct >= 0 ? "+" : ""}{pct.toFixed(2)}%</div>
         {bet ? (
-          <BetState bet={bet} close={c.close} />
+          <BetState bet={bet} close={c.close} real={real} />
         ) : locked ? (
           <div className="mt-2 flex items-center justify-center gap-1 border border-magenta/40 py-1.5 font-mono text-[11px] font-bold text-magenta clip"><Lock size={12} /> LOCKED</div>
         ) : (
@@ -299,19 +304,19 @@ function Mini({ tf, c, hist, bet, flash, now, onBet }: any) {
   );
 }
 
-function BetState({ bet, close, big }: { bet: Bet; close: number; big?: boolean }) {
+function BetState({ bet, close, real, big }: { bet: Bet; close: number; real?: boolean; big?: boolean }) {
   const winning = close >= bet.open === (bet.dir === "up");
   return (
     <div className={`clip ${big ? "mt-0" : "mt-2"} flex items-center justify-between border px-3 ${big ? "py-3.5" : "py-2"} ${winning ? "border-lime/60 bg-lime/10" : "border-magenta/60 bg-magenta/10"}`}>
       <span className={`flex items-center gap-1.5 font-display font-black tracking-wide ${bet.dir === "up" ? "text-lime" : "text-magenta"} ${big ? "text-base" : "text-[12px]"}`}>
-        {bet.dir === "up" ? <ArrowUp size={big ? 18 : 13} /> : <ArrowDown size={big ? 18 : 13} />} {bet.dir.toUpperCase()} · {usdc(bet.stake)}
+        {bet.dir === "up" ? <ArrowUp size={big ? 18 : 13} /> : <ArrowDown size={big ? 18 : 13} />} {bet.dir.toUpperCase()} · {amt(!!real, bet.stake)}
       </span>
       <span className={`tabular font-mono text-[11px] font-bold ${winning ? "text-lime" : "text-magenta"}`}>{winning ? "WINNING" : "LOSING"}</span>
     </div>
   );
 }
 
-function RoundBtn({ dir, onClick, stake }: { dir: "up" | "down"; onClick: () => void; stake: number }) {
+function RoundBtn({ dir, onClick, stake, real }: { dir: "up" | "down"; onClick: () => void; stake: number; real?: boolean }) {
   const up = dir === "up";
   return (
     <button
@@ -322,7 +327,7 @@ function RoundBtn({ dir, onClick, stake }: { dir: "up" | "down"; onClick: () => 
       <div className="flex flex-col items-center leading-none">
         {up ? <ArrowUp size={48} strokeWidth={2.6} /> : <ArrowDown size={48} strokeWidth={2.6} />}
         <span className="mt-1.5 font-display text-base font-black tracking-widest">{dir.toUpperCase()}</span>
-        <span className="mt-1 font-mono text-[11px] opacity-70">{usdc(stake)}</span>
+        <span className="mt-1 font-mono text-[11px] opacity-70">{amt(!!real, stake)}</span>
       </div>
     </button>
   );

@@ -36,7 +36,7 @@ export default function TapPanel({ price, bid, onBid }: { price: number; bid: nu
       setBusy(null);
       if (r.ok) {
         sfx.win();
-        toast.push("cash", "TEST KRW ADDED", `+${won(Number(process.env.NEXT_PUBLIC_FAUCET_DRIP_TKRW) || 1_000_000)}`);
+        toast.push("cash", "TEST KRW ADDED", "game balance topped up");
       } else {
         toast.push("info", "FAUCET", r.error ?? "could not claim");
       }

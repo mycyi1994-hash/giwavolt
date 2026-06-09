@@ -9,11 +9,11 @@ import QuoteTicker from "@/components/ui/QuoteTicker";
 import { useToast } from "@/components/ui/Toast";
 import { useLivePrice } from "@/lib/useLivePrice";
 import { sfx } from "@/lib/sound";
-import { usdc } from "@/lib/money";
+import { amt, DEMO_STAKES, REAL_STAKES, defaultStake } from "@/lib/money";
+import ClaimButton from "./ClaimButton";
 
 const HOUSE_EDGE = 0.05; // baked into the payout (not displayed)
 const PAYOUT = +(2 * (1 - HOUSE_EDGE)).toFixed(2); // symmetric barriers ⇒ ~50/50 → 1.90×
-const PRESETS = [1, 5, 10, 25];
 const DIST = [
   { label: "0.25%", pct: 0.0025 },
   { label: "0.5%", pct: 0.005 },
@@ -24,6 +24,8 @@ type Bet = { dir: "up" | "down"; stake: number; entry: number; up: number; down:
 
 export default function Breakout() {
   const { mode, balance, adjust } = usePlay();
+  const real = mode === "real";
+  const presets = real ? REAL_STAKES : DEMO_STAKES;
   const toast = useToast();
   const liveBtc = useLivePrice(63500);
   const [stake, setStake] = useState(5);
@@ -31,6 +33,7 @@ export default function Breakout() {
   const [, force] = useState(0);
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+  useEffect(() => setStake(defaultStake(mode === "real")), [mode]);
 
   const price = useRef(63500);
   const histRef = useRef<number[]>([]);
@@ -56,10 +59,10 @@ export default function Breakout() {
           if (won) {
             adjust(ctxRef.current.mode, b.stake * PAYOUT);
             sfx.win();
-            toast.push("win", `BREAKOUT ${b.dir.toUpperCase()} ✓ +${usdc(b.stake * PAYOUT)}`, `touched ${touchedUp ? "UP" : "DOWN"}`);
+            toast.push("win", `BREAKOUT ${b.dir.toUpperCase()} ✓ +${amt(ctxRef.current.mode === "real", b.stake * PAYOUT)}`, `touched ${touchedUp ? "UP" : "DOWN"}`);
           } else {
             sfx.lose();
-            toast.push("lose", `BREAKOUT ${b.dir.toUpperCase()} ✗ −${usdc(b.stake)}`, `touched ${touchedUp ? "UP" : "DOWN"}`);
+            toast.push("lose", `BREAKOUT ${b.dir.toUpperCase()} ✗ −${amt(ctxRef.current.mode === "real", b.stake)}`, `touched ${touchedUp ? "UP" : "DOWN"}`);
           }
           status.current = won ? "win" : "lose";
           flashAt.current = Date.now();
@@ -104,14 +107,16 @@ export default function Breakout() {
           <ModeToggle />
         </div>
         <div>
-          <div className="mb-1 font-mono text-[10px] tracking-[0.2em] text-faint">{mode === "real" ? "DEPOSITED" : "BALANCE"}</div>
-          <div className="tabular text-[26px] font-black leading-none text-cyan neon-cyan">{usdc(balance[mode])}</div>
+          <div className="mb-1 font-mono text-[10px] tracking-[0.2em] text-faint">{real ? "GAME BALANCE (tKRW)" : "BALANCE"}</div>
+          <div className={`tabular text-[26px] font-black leading-none ${real ? "text-magenta neon-magenta" : "text-cyan neon-cyan"}`}>{amt(real, balance[mode])}</div>
+          {real && <div className="tabular mt-0.5 text-[11px] text-faint">off-chain · no signature</div>}
+          {real && <ClaimButton className="mt-2 w-full" />}
         </div>
         <div className={live ? "pointer-events-none opacity-40" : ""}>
-          <div className="mb-2 font-mono text-[10px] tracking-[0.2em] text-faint">STAKE (USDC)</div>
+          <div className="mb-2 font-mono text-[10px] tracking-[0.2em] text-faint">STAKE ({real ? "tKRW" : "USDC"})</div>
           <div className="grid grid-cols-4 gap-1.5">
-            {PRESETS.map((v) => (
-              <button key={v} onClick={() => { sfx.select(); setStake(v); }} className={`clip py-2.5 font-mono text-[13px] font-bold tabular transition ${v === stake ? "border border-cyan bg-cyan/10 text-cyan" : "border border-line bg-ink-2 text-muted hover:text-txt"}`}>{v}</button>
+            {presets.map((v) => (
+              <button key={v} onClick={() => { sfx.select(); setStake(v); }} className={`clip py-2.5 font-mono text-[12px] font-bold tabular transition ${v === stake ? "border border-cyan bg-cyan/10 text-cyan" : "border border-line bg-ink-2 text-muted hover:text-txt"}`}>{real ? v.toLocaleString() : v}</button>
             ))}
           </div>
         </div>
@@ -151,12 +156,12 @@ export default function Breakout() {
             </div>
           ) : flashing ? (
             <div className={`panel clip border px-6 py-3 text-center font-display text-base font-black tracking-widest ${status.current === "win" ? "border-lime text-lime" : "border-magenta text-magenta"}`}>
-              {status.current === "win" ? `WON +${usdc((b?.stake ?? 0) * PAYOUT)}` : "MISSED"}
+              {status.current === "win" ? `WON +${amt(real, (b?.stake ?? 0) * PAYOUT)}` : "MISSED"}
             </div>
           ) : (
             <div className="flex items-center justify-center gap-10">
-              <RoundBtn dir="up" onClick={() => place("up")} stake={stake} payout={PAYOUT} />
-              <RoundBtn dir="down" onClick={() => place("down")} stake={stake} payout={PAYOUT} />
+              <RoundBtn dir="up" onClick={() => place("up")} stake={stake} payout={PAYOUT} real={real} />
+              <RoundBtn dir="down" onClick={() => place("down")} stake={stake} payout={PAYOUT} real={real} />
             </div>
           )}
           <p className="pointer-events-none font-mono text-[10px] tracking-wider text-faint">Real Binance price · house can’t move the market · barrier ±{(DIST[distI].pct * 100).toFixed(2)}%</p>
@@ -219,14 +224,14 @@ function BarrierTag({ pct, color, label, value, dim, below }: { pct: number; col
   );
 }
 
-function RoundBtn({ dir, onClick, stake, payout }: { dir: "up" | "down"; onClick: () => void; stake: number; payout: number }) {
+function RoundBtn({ dir, onClick, stake, payout, real }: { dir: "up" | "down"; onClick: () => void; stake: number; payout: number; real?: boolean }) {
   const up = dir === "up";
   return (
     <button onClick={onClick} className={`grid h-28 w-28 place-items-center rounded-full border-2 transition hover:scale-105 active:scale-95 ${up ? "border-lime bg-lime/15 text-lime hover:bg-lime/25" : "border-magenta bg-magenta/15 text-magenta hover:bg-magenta/25"}`} style={{ boxShadow: `0 0 28px ${up ? "rgba(57,255,20,.45)" : "rgba(255,43,214,.45)"}` }}>
       <div className="flex flex-col items-center leading-none">
         {up ? <ArrowUp size={34} strokeWidth={2.6} /> : <ArrowDown size={34} strokeWidth={2.6} />}
         <span className="mt-1 font-display text-sm font-black tracking-widest">{up ? "UP" : "DOWN"}</span>
-        <span className="mt-1 font-mono text-[10px] opacity-70">{usdc(stake)} → {payout}×</span>
+        <span className="mt-1 font-mono text-[10px] opacity-70">{amt(!!real, stake)} → {payout}×</span>
       </div>
     </button>
   );
