@@ -58,17 +58,17 @@ export default function LiveFeed({ className = "" }: { className?: string }) {
           return (
             <div
               key={e.id}
-              className={`flex items-center gap-1.5 border border-line/60 bg-ink/70 px-2 py-1 font-mono clip backdrop-blur-sm ${e.mega ? "animate-rise" : ""}`}
+              className={`flex items-center gap-1.5 overflow-hidden whitespace-nowrap border border-line/60 bg-ink/70 px-2 py-1 font-mono clip backdrop-blur-sm ${e.mega ? "animate-rise" : ""}`}
               style={{ opacity: fade, boxShadow: e.mega ? `0 0 12px ${e.kind === "bust" ? "rgba(255,43,214,.5)" : "rgba(57,255,20,.5)"}` : undefined, borderColor: e.mega ? (e.kind === "bust" ? "rgba(255,43,214,.6)" : "rgba(57,255,20,.6)") : undefined }}
             >
-              <span className={m.cls}>{m.icon}</span>
-              <span className="tabular text-[10px] text-muted">{e.user}</span>
-              <span className="rounded bg-ink-2 px-1 text-[8px] text-faint">{e.game}</span>
-              {e.mult && <span className={`tabular text-[10px] font-bold ${e.mega ? "text-gold" : m.cls}`}>{e.mult}×</span>}
-              <span className={`tabular ml-auto text-[11px] font-bold ${m.cls}`}>
+              <span className={`shrink-0 ${m.cls}`}>{m.icon}</span>
+              <span className="tabular min-w-0 flex-1 truncate text-[10px] text-muted">{e.user}</span>
+              <span className="shrink-0 rounded bg-ink-2 px-1 text-[8px] text-faint">{e.game}</span>
+              {e.mult && <span className={`shrink-0 tabular text-[10px] font-bold ${e.mega ? "text-gold" : m.cls}`}>{e.mult}×</span>}
+              <span className={`shrink-0 tabular text-[11px] font-bold ${m.cls}`}>
                 {m.sign}${e.amount}
               </span>
-              {e.mega && <Flame size={11} className="text-gold" />}
+              {e.mega && <Flame size={11} className="shrink-0 text-gold" />}
             </div>
           );
         })}

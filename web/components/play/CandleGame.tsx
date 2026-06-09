@@ -259,7 +259,7 @@ function Featured({ tf, c, hist, bet, flash, now, stake, onBet }: any) {
             <Lock size={18} /> BETTING LOCKED · opens next candle
           </div>
         ) : (
-          <div className="flex items-center justify-center gap-10">
+          <div className="flex items-center justify-center gap-16">
             <RoundBtn dir="up" onClick={() => onBet(tf.sec, "up")} stake={stake} />
             <RoundBtn dir="down" onClick={() => onBet(tf.sec, "down")} stake={stake} />
           </div>
@@ -316,13 +316,13 @@ function RoundBtn({ dir, onClick, stake }: { dir: "up" | "down"; onClick: () => 
   return (
     <button
       onClick={onClick}
-      className={`group grid h-28 w-28 place-items-center rounded-full border-2 transition hover:scale-105 ${up ? "border-lime bg-lime/15 text-lime hover:bg-lime/25" : "border-magenta bg-magenta/15 text-magenta hover:bg-magenta/25"}`}
-      style={{ boxShadow: `0 0 28px ${up ? "rgba(57,255,20,.45)" : "rgba(255,43,214,.45)"}` }}
+      className={`group grid h-36 w-36 place-items-center rounded-full border-2 transition hover:scale-105 active:scale-95 ${up ? "border-lime bg-lime/15 text-lime hover:bg-lime/25" : "border-magenta bg-magenta/15 text-magenta hover:bg-magenta/25"}`}
+      style={{ boxShadow: `0 0 36px ${up ? "rgba(57,255,20,.5)" : "rgba(255,43,214,.5)"}` }}
     >
       <div className="flex flex-col items-center leading-none">
-        {up ? <ArrowUp size={36} strokeWidth={2.6} /> : <ArrowDown size={36} strokeWidth={2.6} />}
-        <span className="mt-1 font-display text-sm font-black tracking-widest">{dir.toUpperCase()}</span>
-        <span className="mt-0.5 font-mono text-[10px] opacity-70">{usdc(stake)}</span>
+        {up ? <ArrowUp size={48} strokeWidth={2.6} /> : <ArrowDown size={48} strokeWidth={2.6} />}
+        <span className="mt-1.5 font-display text-base font-black tracking-widest">{dir.toUpperCase()}</span>
+        <span className="mt-1 font-mono text-[11px] opacity-70">{usdc(stake)}</span>
       </div>
     </button>
   );

@@ -131,7 +131,7 @@ export default function Breakout() {
 
       <main className="relative min-w-0 flex-1 overflow-hidden bg-[#070710]">
         {/* full-bleed race track */}
-        <Track hist={histRef.current} bet={b} price={price.current} flashing={flashing} win={status.current === "win"} />
+        <Track hist={histRef.current} bet={b} price={price.current} dist={DIST[distI].pct} flashing={flashing} win={status.current === "win"} />
 
         <LiveFeed className="absolute bottom-24 left-3 top-3 z-20 hidden w-56 overflow-hidden lg:block" />
 
@@ -166,58 +166,56 @@ export default function Breakout() {
   );
 }
 
-function Track({ hist, bet, price, flashing, win }: { hist: number[]; bet: Bet | null; price: number; flashing: boolean; win: boolean }) {
-  const w = 760;
-  const h = 280;
-  // vertical range: around barriers (if bet) or recent history
-  let lo: number;
-  let hi: number;
-  if (bet) {
-    const pad = (bet.up - bet.down) * 0.4;
-    lo = bet.down - pad;
-    hi = bet.up + pad;
-  } else {
-    const recent = hist.slice(-60);
-    const mn = Math.min(...recent, price);
-    const mx = Math.max(...recent, price);
-    const pad = (mx - mn) * 0.3 + price * 0.0002;
-    lo = mn - pad;
-    hi = mx + pad;
-  }
+function Track({ hist, bet, price, dist, flashing, win }: { hist: number[]; bet: Bet | null; price: number; dist: number; flashing: boolean; win: boolean }) {
+  const w = 1000;
+  const h = 360;
+  const plotW = w * 0.8; // keep a safe right margin so the line/dot isn't jammed against the edge
+  // barriers: live bet, or a preview band around the current price so they're always visible
+  const up = bet ? bet.up : price * (1 + dist);
+  const down = bet ? bet.down : price * (1 - dist);
+  const mid = bet ? bet.entry : price;
+  // vertical range: zoom out so the full barrier band sits comfortably inside the frame
+  const pad = (up - down) * 0.85;
+  const lo = down - pad;
+  const hi = up + pad;
   const rng = hi - lo || 1;
   const y = (p: number) => h - ((p - lo) / rng) * h;
+  const yPct = (p: number) => ((hi - p) / rng) * 100; // 0% = top, 100% = bottom
   const pts = hist.slice(-80);
-  const line = pts.map((p, i) => `${(i / Math.max(1, pts.length - 1)) * w},${y(p)}`).join(" ");
+  const line = pts.map((p, i) => `${(i / Math.max(1, pts.length - 1)) * plotW},${y(p)}`).join(" ");
   const col = flashing ? (win ? "#39ff14" : "#ff2bd6") : "#00e5ff";
+  const preview = !bet;
 
   return (
     <div className="absolute inset-0 transition-shadow" style={{ boxShadow: flashing ? `inset 0 0 90px ${col}44` : undefined }}>
-      <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className="h-full w-full">
+      <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className="absolute inset-0 h-full w-full">
         {/* faint grid */}
         {[0.25, 0.5, 0.75].map((f) => (
           <line key={f} x1={0} y1={h * f} x2={w} y2={h * f} stroke="rgba(255,255,255,0.04)" strokeWidth={1} />
         ))}
-        {bet && (
-          <>
-            <rect x={0} y={y(bet.up)} width={w} height={Math.max(0, y(bet.down) - y(bet.up))} fill="rgba(0,229,255,0.03)" />
-            <BarrierLine y={y(bet.up)} w={w} color="#39ff14" label={`UP  ${bet.up.toFixed(0)}`} />
-            <BarrierLine y={y(bet.down)} w={w} color="#ff2bd6" label={`DOWN  ${bet.down.toFixed(0)}`} bottom />
-            <line x1={0} y1={y(bet.entry)} x2={w} y2={y(bet.entry)} stroke="rgba(255,255,255,0.28)" strokeWidth={1} strokeDasharray="4 5" />
-          </>
-        )}
+        {/* barrier band */}
+        <rect x={0} y={y(up)} width={w} height={Math.max(0, y(down) - y(up))} fill="rgba(0,229,255,0.035)" />
+        <line x1={0} y1={y(up)} x2={w} y2={y(up)} stroke="#39ff14" strokeWidth={2} strokeDasharray="10 6" vectorEffect="non-scaling-stroke" opacity={preview ? 0.5 : 1} style={{ filter: "drop-shadow(0 0 6px #39ff14)" }} />
+        <line x1={0} y1={y(down)} x2={w} y2={y(down)} stroke="#ff2bd6" strokeWidth={2} strokeDasharray="10 6" vectorEffect="non-scaling-stroke" opacity={preview ? 0.5 : 1} style={{ filter: "drop-shadow(0 0 6px #ff2bd6)" }} />
+        <line x1={0} y1={y(mid)} x2={plotW} y2={y(mid)} stroke="rgba(255,255,255,0.28)" strokeWidth={1} strokeDasharray="4 5" vectorEffect="non-scaling-stroke" />
         <polyline points={line} fill="none" stroke={col} strokeWidth={2.4} strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" style={{ filter: `drop-shadow(0 0 6px ${col})` }} />
-        {pts.length > 0 && <circle cx={w} cy={y(price)} r={5} fill="#eafff0" style={{ filter: `drop-shadow(0 0 8px ${col})` }} />}
+        {pts.length > 0 && <circle cx={plotW} cy={y(price)} r={5} fill="#eafff0" vectorEffect="non-scaling-stroke" style={{ filter: `drop-shadow(0 0 8px ${col})` }} />}
       </svg>
+      {/* crisp HTML labels (percentage-positioned so they don't stretch) */}
+      <BarrierTag pct={yPct(up)} color="#39ff14" label="UP" value={up} dim={preview} />
+      <BarrierTag pct={yPct(down)} color="#ff2bd6" label="DOWN" value={down} dim={preview} below />
     </div>
   );
 }
 
-function BarrierLine({ y, w, color, label, bottom }: { y: number; w: number; color: string; label: string; bottom?: boolean }) {
+function BarrierTag({ pct, color, label, value, dim, below }: { pct: number; color: string; label: string; value: number; dim?: boolean; below?: boolean }) {
   return (
-    <g>
-      <line x1={0} y1={y} x2={w} y2={y} stroke={color} strokeWidth={2} strokeDasharray="10 6" style={{ filter: `drop-shadow(0 0 6px ${color})` }} />
-      <text x={10} y={y + (bottom ? 16 : -8)} fill={color} fontSize={13} fontFamily="var(--font-mono, monospace)" fontWeight="700">{label}</text>
-    </g>
+    <div
+      className="pointer-events-none absolute right-3 -translate-y-1/2 font-mono text-[12px] font-bold tabular"
+      style={{ top: `calc(${Math.max(2, Math.min(98, pct))}% ${below ? "+ 12px" : "- 12px"})`, color, opacity: dim ? 0.55 : 1, textShadow: `0 0 8px ${color}` }}
+    >
+      {label} {value.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+    </div>
   );
 }
 

@@ -473,7 +473,8 @@ export default function GameChart({
 
         // big vertical "LOCKED" — letters cycle through neon colours
         const letters = "LOCKED".split("");
-        const lh = Math.min(60, (bot - top - 3 * m) / (letters.length + 1));
+        // size by both the vertical room and the zone width so the glyphs are as big as will fit
+        const lh = Math.min(96, (bot - top - 3 * m) / (letters.length + 0.6), (zx1 - zx0) * 0.92);
         const startY = (top + bot) / 2 - (letters.length * lh) / 2;
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
