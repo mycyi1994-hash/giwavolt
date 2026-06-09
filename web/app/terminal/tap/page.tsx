@@ -9,33 +9,27 @@ import ConnectGate from "@/components/play/ConnectGate";
 import { usePlay } from "@/components/play/PlayProvider";
 import { useToast } from "@/components/ui/Toast";
 import { sfx } from "@/lib/sound";
-import { usdc } from "@/lib/money";
-import { useVoltTap, VoltTapError } from "@/lib/useVoltTap";
-import { STAKE_ETH } from "@/lib/volttap";
+import { usdc, won } from "@/lib/money";
 
-const fmtEth = (n: number) => `${n >= 0 ? "+" : "−"}${Math.abs(n).toFixed(4)} ETH`;
-
-const TAP_ERR: Record<string, string> = {
-  disabled: "REAL mode needs the VoltTap contract — set NEXT_PUBLIC_VOLTTAP_ADDRESS",
-  disconnected: "connect a wallet first",
-  "bad-mult": "that cell's odds are too low for on-chain settlement",
-  bankroll: "house bankroll can't cover that payout right now",
-  rejected: "transaction rejected",
-  failed: "something went wrong",
-};
+// stake/payout amount in the current mode's unit
+const fmtAmt = (real: boolean, n: number) => (real ? won(n) : usdc(n));
+const fmtPnl = (real: boolean, n: number) => `${n >= 0 ? "+" : "−"}${fmtAmt(real, Math.abs(n))}`;
 
 export default function TapTradingPage() {
   const { mode, balance, adjust } = usePlay();
   const real = mode === "real";
   const toast = useToast();
-  const vt = useVoltTap();
 
   const [bid, setBid] = useState(5);
   const [price, setPrice] = useState(1673.49);
   const [zoom, setZoom] = useState(1);
   const [stats, setStats] = useState({ live: 0, won: 0, profit: 0 });
 
-  useEffect(() => setStats({ live: 0, won: 0, profit: 0 }), [mode]);
+  // reset stats and pick a sensible default stake when switching modes
+  useEffect(() => {
+    setStats({ live: 0, won: 0, profit: 0 });
+    setBid(mode === "real" ? 50_000 : 5);
+  }, [mode]);
 
   const ctxRef = useRef({ mode, balance });
   ctxRef.current = { mode, balance };
@@ -44,6 +38,7 @@ export default function TapTradingPage() {
 
   const onBet = useCallback(
     (b: { stake: number; mult: number; status: BetStatus }) => {
+      const isReal = ctxRef.current.mode === "real";
       switch (b.status) {
         case "live":
           sfx.place();
@@ -53,11 +48,11 @@ export default function TapTradingPage() {
           break;
         case "won":
           sfx.win();
-          toast.push("win", `WIN +${usdc(b.stake * b.mult)}`, `${b.mult.toFixed(2)}× hit`);
+          toast.push("win", `WIN +${fmtAmt(isReal, b.stake * b.mult)}`, `${b.mult.toFixed(2)}× hit`);
           break;
         case "lost":
           sfx.lose();
-          toast.push("lose", `MISS −${usdc(b.stake)}`, "line dodged it");
+          toast.push("lose", `MISS −${fmtAmt(isReal, b.stake)}`, "line dodged it");
           break;
       }
       setStats((s) => {
@@ -76,35 +71,6 @@ export default function TapTradingPage() {
     [toast]
   );
 
-  // REAL mode: each tap is a single on-chain VoltTap bet (fixed 0.0001 ETH,
-  // win-chance derived from the tapped cell's multiplier, instant RNG payout).
-  const onRealTap = useCallback(
-    async (mult: number) => {
-      sfx.place();
-      setStats((s) => ({ ...s, live: s.live + 1 }));
-      toast.push("info", "TAP SENT", `${mult.toFixed(2)}× · 0.0001 ETH · sign to confirm`);
-      try {
-        const r = await vt.tap(mult);
-        const payoutEth = Number(r.payoutWei) / 1e18;
-        if (r.win) {
-          sfx.win();
-          toast.push("win", `WIN +${payoutEth.toFixed(4)} ETH`, `${(r.multBps / 1e4).toFixed(2)}× hit`);
-          setStats((s) => ({ live: Math.max(0, s.live - 1), won: s.won + 1, profit: +(s.profit + payoutEth - STAKE_ETH).toFixed(6) }));
-        } else {
-          sfx.lose();
-          toast.push("lose", `MISS −${STAKE_ETH.toFixed(4)} ETH`, "roll missed");
-          setStats((s) => ({ ...s, live: Math.max(0, s.live - 1), profit: +(s.profit - STAKE_ETH).toFixed(6) }));
-        }
-      } catch (e) {
-        const code = e instanceof VoltTapError ? e.code : "failed";
-        sfx.cancel();
-        toast.push("info", "TAP CANCELLED", TAP_ERR[code] ?? code);
-        setStats((s) => ({ ...s, live: Math.max(0, s.live - 1) }));
-      }
-    },
-    [vt, toast]
-  );
-
   const clampZoom = (z: number) => Math.max(0.6, Math.min(2.6, z));
 
   return (
@@ -114,7 +80,7 @@ export default function TapTradingPage() {
 
         <main className="relative min-w-0 flex-1 bg-[#070710]">
           <div className={`panel clip absolute left-4 top-3 z-10 px-3 py-1.5 font-mono text-[11px] tracking-wider ${real ? "text-magenta" : "text-cyan"}`}>
-            {real ? (vt.enabled ? "◆ REAL — on-chain · 0.0001 ETH/tap" : "◆ REAL — deploy VoltTap to enable") : "◆ DEMO — play money"}
+            {real ? "◆ REAL — tKRW · off-chain · no signature" : "◆ DEMO — play money"}
           </div>
           <LiveFeed className="absolute bottom-4 left-3 top-12 z-10 hidden w-56 overflow-hidden md:block" />
 
@@ -123,7 +89,7 @@ export default function TapTradingPage() {
             <Sep />
             <Stat label="WON" value={String(stats.won)} cls="text-cyan" />
             <Sep />
-            <Stat label="P&L" value={real ? fmtEth(stats.profit) : (stats.profit >= 0 ? "+" : "") + usdc(stats.profit)} cls={stats.profit > 0 ? "text-lime" : stats.profit < 0 ? "text-magenta" : "text-txt"} />
+            <Stat label="P&L" value={fmtPnl(real, stats.profit)} cls={stats.profit > 0 ? "text-lime" : stats.profit < 0 ? "text-magenta" : "text-txt"} />
           </div>
 
           <div className="absolute bottom-3 right-4 z-10 flex items-center gap-1.5">
@@ -135,8 +101,7 @@ export default function TapTradingPage() {
           <GameChart
             bidSize={bid}
             zoom={zoom}
-            realMode={real}
-            onRealTap={onRealTap}
+            unit={real ? "tKRW" : "USDC"}
             onZoom={(f) => setZoom((z) => clampZoom(z * f))}
             onPrice={setPrice}
             onBalanceDelta={onBalanceDelta}

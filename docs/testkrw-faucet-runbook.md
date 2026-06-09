@@ -1,64 +1,57 @@
-# Test KRW (tKRW) + faucet — runbook
+# Test KRW (tKRW) — off-chain play balance + faucet/withdraw
 
-Play-money token so people can try the games on Giwa Sepolia without real
-testnet USDC/ETH. The faucet **pushes** tKRW (plus a little gas ETH) to a
-wallet, so users with zero ETH can still receive — they don't sign anything.
+Lets people play **every game** in tKRW on Giwa Sepolia with **no signatures**.
+The game balance is an off-chain ledger keyed by the connected wallet; faucet
+credits it, games settle against it instantly, and withdraw turns it back into
+real on-chain tKRW.
 
-## Pieces (this slice)
+## How it works
 
-- `game/contracts/src/TestKRW.sol` — minimal ERC-20 (`tKRW`, 18 dp). Owner can
-  `mint`; anyone with gas can pull a rate-limited `faucet()` drip.
-- `game/web/app/api/faucet/route.ts` — server endpoint. A funded hot wallet
-  sends the caller tKRW + dust ETH. Per-address cooldown.
-- `game/web/components/account/FaucetButton.tsx` — "GET TEST KRW" button.
-- `game/web/lib/testkrw.ts` / `useTestKrw.ts` — token config + balance read.
-- Tap Trading REAL panel shows the tKRW balance + faucet button.
+- **Connect wallet** → identity (no signature, just account access).
+- **GET TEST KRW** → server credits your off-chain balance (`/api/account/claim`).
+- **Play any game** → stakes/payouts adjust the balance (`/api/account/adjust`).
+  No popups. All games share one balance per wallet address.
+- **WITHDRAW** → the house wallet sends real tKRW to your wallet
+  (`/api/account/withdraw`). Only this step touches the chain.
 
-Everything is **gated**: with the env vars unset the UI shows a "not deployed"
-hint and nothing breaks.
+Pieces:
 
-## 1. Deploy the token (needs a little ETH for gas)
+- `lib/server/ledger.ts` — file-backed ledger (`.data/ledger.json`).
+- `app/api/account/{balance,claim,adjust,withdraw}/route.ts` — the endpoints.
+- `components/play/PlayProvider.tsx` — REAL balance = server ledger; `adjust()`
+  routes real deltas to the server. Every game uses this, so they all work.
+- `game/contracts/src/TestKRW.sol` — the real tKRW token (only used for withdraw).
 
-```bash
-cd game/contracts
-# .env: PRIVATE_KEY=0x...   (funded deployer = token owner)
-npm install && npm run compile
-FAUCET_WALLET=0xYOURFAUCETWALLET FAUCET_SEED=1000000000 npm run deploy:testkrw
-# → prints "TestKRW: 0x..." and mints 1e9 tKRW to the faucet wallet
-# → writes deployments/testKRW.giwaSepolia.json
+> **SECURITY (demo):** settlement is client-reported, so it's cheatable. This
+> proves the no-signature flow on testnet; real money needs server-authoritative
+> outcomes (oracles / server RNG) and a real DB instead of the JSON file.
+
+## Setup
+
+You already deployed `TestKRW`. You only need two env vars in `game/web/.env.local`:
+
+```
+NEXT_PUBLIC_TESTKRW_ADDRESS=0x...   # your tKRW token (for withdrawals)
+FAUCET_PRIVATE_KEY=0x...            # house wallet key, server-only (holds tKRW)
 ```
 
-`FAUCET_WALLET` is the hot wallet the server faucet will send from (can be the
-deployer). It receives the seed tKRW. It also needs some **ETH** so it can pay
-gas and hand out dust ETH.
-
-## 2. Configure the web app
-
-```bash
-cd game/web   # .env.local
-NEXT_PUBLIC_TESTKRW_ADDRESS=0x...        # token address from step 1
-FAUCET_PRIVATE_KEY=0x...                 # the FAUCET_WALLET's private key (server-only!)
-# optional:
-# FAUCET_DRIP_TKRW=1000000
-# FAUCET_DRIP_ETH=0.001
-# FAUCET_COOLDOWN_MS=28800000
+Optional:
+```
+FAUCET_DRIP_TKRW=1000000   # credited per "GET TEST KRW" (default 1,000,000)
+FAUCET_COOLDOWN_MS=0       # per-address claim cooldown (default none)
 ```
 
-> **Security:** `FAUCET_PRIVATE_KEY` has no `NEXT_PUBLIC_` prefix on purpose — it
-> must never reach the browser. On Vercel add it as a (non-public) Environment
-> Variable. It's a testnet hot wallet; keep only small amounts in it.
+The house wallet (`FAUCET_PRIVATE_KEY`) must hold tKRW so it can pay out
+withdrawals. The deploy script already minted the seed to it. It needs a little
+ETH only when someone actually withdraws (gas for the transfer).
 
-## 3. Try it
+Then `npm run dev`, open Tap Trading → REAL → **GET TEST KRW** → play any game.
 
-`npm run dev`, connect a wallet on Giwa Sepolia, open Tap Trading → REAL. Click
-**GET TEST KRW** — the server sends tKRW (+ dust ETH) and the balance updates in
-a few seconds. No signature needed.
+## Notes / next
 
-## Not yet (next phases)
-
-- **Spending tKRW in-game.** Right now tKRW is shown/claimable but betting isn't
-  wired to it yet. Next: settle plays in tKRW — either per-bet on-chain
-  (VoltTapKRW) or the chosen deposit→off-chain model (custody backend +
-  settlement). The faucet/token built here feed both.
-- Surface the faucet on the landing page too (currently in the Tap REAL panel).
-- Abuse resistance beyond the in-memory cooldown (e.g. captcha / per-IP).
+- Tap Trading's panel is fully wired (₩ balance, KRW bid sizes, claim, withdraw).
+  Candle / Breakout / Death already use the same shared balance (claim once in
+  Tap and it's available everywhere); their side panels still show a `$`/USDC
+  style label until a display pass.
+- Persistence is a JSON file — for a hosted deploy (Vercel) move the ledger to a
+  real DB/KV, since serverless filesystems are ephemeral.

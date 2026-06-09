@@ -1,36 +1,64 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, RotateCcw, Zap } from "lucide-react";
-import { useAccount, useBalance } from "wagmi";
-import { formatEther } from "viem";
+import { Plus, RotateCcw, Droplets, ArrowUpFromLine, Loader2 } from "lucide-react";
 import { usePlay } from "./PlayProvider";
 import ModeToggle from "./ModeToggle";
+import { useWalletGate } from "@/lib/walletGate";
+import { useToast } from "@/components/ui/Toast";
 import QuoteTicker from "@/components/ui/QuoteTicker";
 import { sfx } from "@/lib/sound";
-import { usdc, krw } from "@/lib/money";
-import { STAKE_ETH, EDGE_BPS } from "@/lib/volttap";
-import { useTestKrw } from "@/lib/useTestKrw";
-import { fmtKrw } from "@/lib/testkrw";
-import FaucetButton from "@/components/account/FaucetButton";
+import { usdc, krw, won } from "@/lib/money";
 
-const PRESETS = [1, 5, 10, 100];
+const DEMO_PRESETS = [1, 5, 10, 100];
+const REAL_PRESETS = [10_000, 50_000, 100_000, 500_000]; // tKRW
 
 export default function TapPanel({ price, bid, onBid }: { price: number; bid: number; onBid: (n: number) => void }) {
-  const { mode, balance, adjust, resetDemo } = usePlay();
+  const { mode, balance, adjust, resetDemo, realReady, claimReal, withdrawReal } = usePlay();
+  const { requireWallet } = useWalletGate();
+  const toast = useToast();
   const [custom, setCustom] = useState("");
+  const [busy, setBusy] = useState<"claim" | "withdraw" | null>(null);
   const real = mode === "real";
-
-  // REAL mode: tKRW is the play balance; native ETH is just gas.
-  const { address } = useAccount();
-  const { data: ethBal } = useBalance({ address, query: { enabled: real, refetchInterval: 12_000 } });
-  const tkrw = useTestKrw();
+  const presets = real ? REAL_PRESETS : DEMO_PRESETS;
 
   const applyCustom = (v: string) => {
     setCustom(v);
     const n = parseFloat(v);
-    if (!Number.isNaN(n) && n > 0) onBid(+n.toFixed(2));
+    if (!Number.isNaN(n) && n > 0) onBid(+n.toFixed(real ? 0 : 2));
   };
+
+  const onClaim = () =>
+    requireWallet(async () => {
+      setBusy("claim");
+      sfx.tick();
+      const r = await claimReal();
+      setBusy(null);
+      if (r.ok) {
+        sfx.win();
+        toast.push("cash", "TEST KRW ADDED", `+${won(Number(process.env.NEXT_PUBLIC_FAUCET_DRIP_TKRW) || 1_000_000)}`);
+      } else {
+        toast.push("info", "FAUCET", r.error ?? "could not claim");
+      }
+    });
+
+  const onWithdraw = () =>
+    requireWallet(async () => {
+      if (balance.real <= 0) {
+        toast.push("info", "WITHDRAW", "nothing to withdraw");
+        return;
+      }
+      setBusy("withdraw");
+      sfx.tick();
+      const r = await withdrawReal(balance.real);
+      setBusy(null);
+      if (r.ok) {
+        sfx.win();
+        toast.push("cash", "WITHDRAWN", "real tKRW sent to your wallet");
+      } else {
+        toast.push("info", "WITHDRAW", r.error ?? "withdraw failed");
+      }
+    });
 
   return (
     <aside className="flex w-full shrink-0 flex-col gap-5 border-b border-line bg-ink/40 p-4 md:w-[270px] md:border-b-0 md:border-r">
@@ -50,11 +78,9 @@ export default function TapPanel({ price, bid, onBid }: { price: number; bid: nu
       {/* balance */}
       {real ? (
         <div>
-          <div className="mb-1 font-mono text-[10px] tracking-[0.2em] text-faint">TEST KRW (GIWA SEPOLIA)</div>
-          <div className="tabular text-[28px] font-black leading-none text-magenta neon-magenta">{fmtKrw(tkrw.balance)}</div>
-          <div className="tabular text-[11px] text-faint">
-            gas: {ethBal ? (+formatEther(ethBal.value)).toFixed(4) : "—"} ETH
-          </div>
+          <div className="mb-1 font-mono text-[10px] tracking-[0.2em] text-faint">GAME BALANCE (tKRW)</div>
+          <div className="tabular text-[28px] font-black leading-none text-magenta neon-magenta">{won(balance.real)}</div>
+          <div className="tabular text-[11px] text-faint">off-chain · no signature to play</div>
         </div>
       ) : (
         <div>
@@ -64,63 +90,58 @@ export default function TapPanel({ price, bid, onBid }: { price: number; bid: nu
         </div>
       )}
 
-      {/* bid / stake */}
-      {real ? (
-        <div>
-          <div className="mb-2 font-mono text-[10px] tracking-[0.2em] text-faint">STAKE PER TAP</div>
-          <div className="panel clip flex items-center justify-between px-3 py-2.5">
-            <span className="flex items-center gap-2 font-display text-sm font-bold text-magenta">
-              <Zap size={15} className="text-magenta" /> {STAKE_ETH.toFixed(4)} ETH
-            </span>
-            <span className="font-mono text-[10px] text-faint">FIXED</span>
-          </div>
-          <p className="mt-2 font-mono text-[10px] leading-relaxed text-faint">
-            Tap a cell — its multiplier sets the win-chance. {EDGE_BPS / 100}% house edge. Provably-fair, settles on-chain instantly.
-          </p>
+      {/* bid */}
+      <div>
+        <div className="mb-2 font-mono text-[10px] tracking-[0.2em] text-faint">BID SIZE ({real ? "tKRW" : "USDC"})</div>
+        <div className="grid grid-cols-4 gap-1.5">
+          {presets.map((b) => {
+            const active = b === bid && custom === "";
+            return (
+              <button
+                key={b}
+                onClick={() => {
+                  sfx.select();
+                  setCustom("");
+                  onBid(b);
+                }}
+                className={`clip py-2.5 font-mono text-[12px] font-bold tabular transition ${
+                  active ? "border border-cyan bg-cyan/10 text-cyan animate-glow" : "border border-line bg-ink-2 text-muted hover:border-line-strong hover:text-txt"
+                }`}
+              >
+                {real ? b.toLocaleString() : b}
+              </button>
+            );
+          })}
         </div>
-      ) : (
-        <div>
-          <div className="mb-2 font-mono text-[10px] tracking-[0.2em] text-faint">BID SIZE (USDC)</div>
-          <div className="grid grid-cols-4 gap-1.5">
-            {PRESETS.map((b) => {
-              const active = b === bid && custom === "";
-              return (
-                <button
-                  key={b}
-                  onClick={() => {
-                    sfx.select();
-                    setCustom("");
-                    onBid(b);
-                  }}
-                  className={`clip py-2.5 font-mono text-[13px] font-bold tabular transition ${
-                    active ? "border border-cyan bg-cyan/10 text-cyan animate-glow" : "border border-line bg-ink-2 text-muted hover:border-line-strong hover:text-txt"
-                  }`}
-                >
-                  {b}
-                </button>
-              );
-            })}
-          </div>
-          <div className="mt-2 flex items-center gap-2 border border-line bg-ink-2 px-3 py-2 clip">
-            <input
-              value={custom}
-              onChange={(e) => applyCustom(e.target.value.replace(/[^\d.]/g, ""))}
-              inputMode="decimal"
-              placeholder="Custom amount"
-              className="tabular w-full bg-transparent text-[14px] text-txt outline-none placeholder:text-faint"
-            />
-            <span className="font-mono text-[11px] text-cyan">USDC</span>
-          </div>
+        <div className="mt-2 flex items-center gap-2 border border-line bg-ink-2 px-3 py-2 clip">
+          <input
+            value={custom}
+            onChange={(e) => applyCustom(e.target.value.replace(/[^\d.]/g, ""))}
+            inputMode="decimal"
+            placeholder="Custom amount"
+            className="tabular w-full bg-transparent text-[14px] text-txt outline-none placeholder:text-faint"
+          />
+          <span className="font-mono text-[11px] text-cyan">{real ? "tKRW" : "USDC"}</span>
         </div>
-      )}
+      </div>
 
-      {/* funds / status */}
+      {/* funds */}
       {real ? (
-        <div className="flex flex-col gap-2">
-          <FaucetButton enabled={tkrw.enabled} onClaimed={() => tkrw.refetch()} />
-          <div className="panel clip px-3 py-2 font-mono text-[10px] leading-relaxed text-faint">
-            Free test money — no real value. <span className="text-magenta">tKRW</span> is your play balance; the bit of ETH is just gas for on-chain actions.
-          </div>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            onClick={onClaim}
+            disabled={busy !== null}
+            className="btn-neon clip flex items-center justify-center gap-1.5 bg-lime/10 py-2.5 font-display text-[12px] font-bold tracking-wide text-lime disabled:opacity-60"
+          >
+            {busy === "claim" ? <Loader2 size={14} className="animate-spin" /> : <Droplets size={14} />} GET TEST KRW
+          </button>
+          <button
+            onClick={onWithdraw}
+            disabled={busy !== null}
+            className="clip flex items-center justify-center gap-1.5 border border-magenta/50 py-2.5 font-display text-[12px] font-bold tracking-wide text-magenta transition hover:bg-magenta/10 disabled:opacity-60"
+          >
+            {busy === "withdraw" ? <Loader2 size={14} className="animate-spin" /> : <ArrowUpFromLine size={14} />} WITHDRAW
+          </button>
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-2">
@@ -137,6 +158,12 @@ export default function TapPanel({ price, bid, onBid }: { price: number; bid: nu
             <RotateCcw size={14} strokeWidth={2.6} /> RESET
           </button>
         </div>
+      )}
+
+      {real && (
+        <p className="-mt-2 font-mono text-[10px] leading-relaxed text-faint">
+          Free test money — no real value. Play with no popups; WITHDRAW sends real tKRW to your wallet.
+        </p>
       )}
 
       <div className="mt-auto">

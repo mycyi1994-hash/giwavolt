@@ -4,9 +4,9 @@ import { useEffect, useRef } from "react";
 import { cellMultiplier, multIntensity, VOL_PER_SQRT_SEC } from "@/lib/grid";
 import { mult as fmtMult } from "@/lib/format";
 
-// compact USDC amount for canvas labels
-function amt(n: number): string {
-  return (n >= 100 ? n.toFixed(0) : n.toFixed(2).replace(/\.00$/, "")) + " USDC";
+// compact amount for canvas labels (unit defaults to USDC; tKRW in REAL mode)
+function amt(n: number, unit = "USDC"): string {
+  return (n >= 100 ? n.toFixed(0) : n.toFixed(2).replace(/\.00$/, "")) + " " + unit;
 }
 
 // ---- engine tuning -------------------------------------------------------
@@ -56,6 +56,7 @@ export default function GameChart({
   zoom = 1,
   realMode = false,
   ambient = false,
+  unit = "USDC",
   onPrice,
   onBalanceDelta,
   onBet,
@@ -67,6 +68,7 @@ export default function GameChart({
   zoom?: number;
   realMode?: boolean;
   ambient?: boolean;
+  unit?: string;
   onPrice: (p: number) => void;
   onBalanceDelta: (d: number) => void;
   onBet: (b: { stake: number; mult: number; status: BetStatus }) => void;
@@ -88,6 +90,8 @@ export default function GameChart({
   ambientRef.current = ambient;
   const onRealTapRef = useRef(onRealTap);
   onRealTapRef.current = onRealTap;
+  const unitRef = useRef(unit);
+  unitRef.current = unit;
   const balanceRef = useRef(getBalance);
   balanceRef.current = getBalance;
 
@@ -234,7 +238,7 @@ export default function GameChart({
           const payout = b.stake * b.mult;
           onBalanceDelta(payout);
           onBet({ stake: b.stake, mult: b.mult, status: "won" });
-          floaters.push({ x: ex, y: ey, text: "+" + amt(payout), born: now, kind: "win" });
+          floaters.push({ x: ex, y: ey, text: "+" + amt(payout, unitRef.current), born: now, kind: "win" });
           effects.push({ x: ex, y: ey, kind: "win", born: now });
         } else {
           b.status = "lost";
@@ -517,7 +521,7 @@ export default function GameChart({
         ctx.shadowBlur = 0;
         if (yBot - yTop > 16) {
           ctx.fillStyle = won ? "#06060e" : "#ffe27a";
-          ctx.fillText(amt(bt.stake), (x0 + x1) / 2, (yTop + yBot) / 2 - 6);
+          ctx.fillText(amt(bt.stake, unitRef.current), (x0 + x1) / 2, (yTop + yBot) / 2 - 6);
           ctx.font = "600 10px var(--font-mono, monospace)";
           ctx.fillText(fmtMult(bt.mult), (x0 + x1) / 2, (yTop + yBot) / 2 + 7);
           ctx.font = "700 12px var(--font-display, sans-serif)";

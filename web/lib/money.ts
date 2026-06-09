@@ -14,6 +14,11 @@ export function usdcKrw(n: number, dp = 2): string {
   return `${usdc(n, dp)} · ${krw(n)}`;
 }
 
+// Raw KRW amount (REAL mode, tKRW off-chain balance) — "₩1,000,000".
+export function won(n: number): string {
+  return `₩${Math.round(n).toLocaleString("en-US")}`;
+}
+
 export function pct(n: number, dp = 1): string {
   return `${n >= 0 ? "+" : ""}${n.toFixed(dp)}%`;
 }
