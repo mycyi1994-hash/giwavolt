@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, RotateCcw, Droplets, ArrowUpFromLine, Loader2 } from "lucide-react";
+import { Plus, RotateCcw, Droplets, ArrowUpFromLine, ArrowDownToLine, Loader2 } from "lucide-react";
 import { usePlay } from "./PlayProvider";
 import ModeToggle from "./ModeToggle";
 import { useWalletGate } from "@/lib/walletGate";
@@ -9,16 +9,18 @@ import { useToast } from "@/components/ui/Toast";
 import QuoteTicker from "@/components/ui/QuoteTicker";
 import { sfx } from "@/lib/sound";
 import { usdc, krw, won } from "@/lib/money";
+import { useVaultDeposit } from "@/lib/useVaultDeposit";
 
 const DEMO_PRESETS = [1, 5, 10, 100];
 const REAL_PRESETS = [10_000, 50_000, 100_000, 500_000]; // tKRW
 
 export default function TapPanel({ price, bid, onBid }: { price: number; bid: number; onBid: (n: number) => void }) {
-  const { mode, balance, adjust, resetDemo, realReady, claimReal, withdrawReal } = usePlay();
+  const { mode, balance, adjust, resetDemo, realReady, claimReal, withdrawReal, refreshReal } = usePlay();
   const { requireWallet } = useWalletGate();
+  const vaultDeposit = useVaultDeposit();
   const toast = useToast();
   const [custom, setCustom] = useState("");
-  const [busy, setBusy] = useState<"claim" | "withdraw" | null>(null);
+  const [busy, setBusy] = useState<"claim" | "withdraw" | "deposit" | null>(null);
   const real = mode === "real";
   const presets = real ? REAL_PRESETS : DEMO_PRESETS;
 
@@ -57,6 +59,24 @@ export default function TapPanel({ price, bid, onBid }: { price: number; bid: nu
         toast.push("cash", "WITHDRAWN", "real tKRW sent to your wallet");
       } else {
         toast.push("info", "WITHDRAW", r.error ?? "withdraw failed");
+      }
+    });
+
+  const onDeposit = () =>
+    requireWallet(async () => {
+      const input = typeof window !== "undefined" ? window.prompt("Deposit how many tKRW into the game?", "100000") : null;
+      const amt = input ? parseFloat(input) : NaN;
+      if (!(amt > 0)) return;
+      setBusy("deposit");
+      sfx.tick();
+      const r = await vaultDeposit.deposit(amt);
+      setBusy(null);
+      if (r.ok) {
+        sfx.win();
+        refreshReal();
+        toast.push("cash", "DEPOSITED", `${won(r.credited ?? amt)} added to game balance`);
+      } else {
+        toast.push("info", "DEPOSIT", r.error ?? "deposit failed");
       }
     });
 
@@ -127,7 +147,7 @@ export default function TapPanel({ price, bid, onBid }: { price: number; bid: nu
 
       {/* funds */}
       {real ? (
-        <div className="grid grid-cols-2 gap-2">
+        <div className="flex flex-col gap-2">
           <button
             onClick={onClaim}
             disabled={busy !== null}
@@ -135,13 +155,24 @@ export default function TapPanel({ price, bid, onBid }: { price: number; bid: nu
           >
             {busy === "claim" ? <Loader2 size={14} className="animate-spin" /> : <Droplets size={14} />} GET TEST KRW
           </button>
-          <button
-            onClick={onWithdraw}
-            disabled={busy !== null}
-            className="clip flex items-center justify-center gap-1.5 border border-magenta/50 py-2.5 font-display text-[12px] font-bold tracking-wide text-magenta transition hover:bg-magenta/10 disabled:opacity-60"
-          >
-            {busy === "withdraw" ? <Loader2 size={14} className="animate-spin" /> : <ArrowUpFromLine size={14} />} WITHDRAW
-          </button>
+          <div className="grid grid-cols-2 gap-2">
+            {vaultDeposit.enabled && (
+              <button
+                onClick={onDeposit}
+                disabled={busy !== null}
+                className="clip flex items-center justify-center gap-1.5 border border-cyan/50 py-2.5 font-display text-[12px] font-bold tracking-wide text-cyan transition hover:bg-cyan/10 disabled:opacity-60"
+              >
+                {busy === "deposit" ? <Loader2 size={14} className="animate-spin" /> : <ArrowDownToLine size={14} />} DEPOSIT
+              </button>
+            )}
+            <button
+              onClick={onWithdraw}
+              disabled={busy !== null}
+              className={`clip flex items-center justify-center gap-1.5 border border-magenta/50 py-2.5 font-display text-[12px] font-bold tracking-wide text-magenta transition hover:bg-magenta/10 disabled:opacity-60 ${vaultDeposit.enabled ? "" : "col-span-2"}`}
+            >
+              {busy === "withdraw" ? <Loader2 size={14} className="animate-spin" /> : <ArrowUpFromLine size={14} />} WITHDRAW
+            </button>
+          </div>
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-2">
