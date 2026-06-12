@@ -1,81 +1,52 @@
-# VOLT ⚡ — on-chain tap-trading game
+# VOLT ⚡ — crypto arcade (Giwa Sepolia)
 
-A full on-chain **tap-trading** game on **Giwa Sepolia** (Chain ID `91342`)
-with an original neon/cyberpunk UI. A live ETH/USD price line scrolls right; the
-future is tiled with a **multiplier grid**. Tap a cell — if the real price line
-passes through it, you win `stake × multiplier`.
+Four games — **Tap Trading, Next Candle, Breakout, Death Fun** — in a neon
+cyberpunk terminal. Two modes:
 
-- **Tap again to cancel** a bet (full refund) while it's still live.
-- Cells closer than **10 seconds** are **locked** (can't be bet).
-- Multipliers are exact fair odds minus a **7% house edge** (cyan = low, magenta
-  = high); cells outside `(1x, 30x]` aren't offered, carving a probability cone.
+- **DEMO** — local play money, zero setup.
+- **REAL** — plays in **tKRW** test money with **no per-bet signatures**. The
+  balance is an off-chain server ledger (Postgres); money moves on-chain only at
+  the edges: faucet/claim in, **GameVault** deposit/withdraw in & out.
 
-> Separate module from the v1 prediction market (`/contracts`, `/web`, …). Same
-> chain, same oracle trust model, its own contract + UI.
+## How REAL mode works
+
+```
+wallet connect (no sig)
+  → GET TEST KRW            server credits the ledger          (no sig)
+  → play any game           stakes/payouts hit the ledger      (no sig)
+  → DEPOSIT                 approve + GameVault.deposit()      (the only user sigs)
+  → WITHDRAW                operator signs an EIP-712 voucher,
+                            backend relays — real tKRW out     (no user sig)
+```
+
+Tap Trading's multiplier grid is exact fair odds minus a **7% house edge**:
+`multiplier = 0.93 / P(price lands in the cell)` (see `web/lib/grid.ts`), so
+every offered cell has the same EV and the edge is fully verifiable.
 
 ## Layout
 
-| Path               | Stack                                  | Purpose                                   |
-| ------------------ | -------------------------------------- | ----------------------------------------- |
-| `contracts/`       | Hardhat + Solidity 0.8.24              | `SlideGame` — grid bets, real-price settle |
-| `web/`             | Next.js 14 + Tailwind + canvas engine  | The Tap-Trading UI (live chart + grid)    |
-| `docs/design.md`   | Markdown                               | Game + contract design notes              |
+| Path         | Stack                                 | Purpose                                          |
+| ------------ | ------------------------------------- | ------------------------------------------------ |
+| `web/`       | Next.js 14 + Tailwind + canvas        | UI + API routes (ledger, faucet, vault, games)   |
+| `contracts/` | Hardhat + Solidity 0.8.24             | `TestKRW.sol` (tKRW), `GameVault.sol` (custody)  |
+| `docs/`      | Markdown                              | Architecture + runbooks (P1/P3/P4 guides)        |
 
-## Run the UI (demo mode)
-
-The web app ships a fully client-side **demo** — a simulated live price line, a
-live multiplier grid, tap-to-bet, win/lose payouts and a running balance. No
-wallet or deployed contract needed.
+## Run
 
 ```bash
-cd game/web
+cd web
 npm install
-npm run dev        # http://localhost:3000
+cp .env.local.example .env.local   # DATABASE_URL + token/keys for REAL mode
+npm run dev                        # http://localhost:3000
 ```
 
-Tap cells in the grid (right of the dashed "now" line). Pick a **Bid Size** in
-the left panel first. Wins animate `+$payout`; the balance updates live.
-
-## Contracts
+## Deploy contracts
 
 ```bash
-cd game/contracts
-npm install
-npx hardhat test          # SlideGame unit tests
+cd contracts                        # .env: PRIVATE_KEY=0x... (funded test wallet)
+npm install && npm test
+npm run deploy:testkrw              # tKRW token
+BANKROLL_TKRW=10000000 npm run deploy:vault
 ```
 
-Deploy to Giwa Sepolia:
-
-```bash
-export PRIVATE_KEY=0x...          # deployer = default admin/oracle/treasury
-export BANKROLL_ETH=1.0           # optional initial house bankroll
-npx hardhat run scripts/deploy.ts --network giwaSepolia
-# writes deployments/giwaSepolia.json
-```
-
-## How it works
-
-1. **Admin opens a round** committing the multiplier grid + price bands *before*
-   any price is known (`openRound`).
-2. **Players tap cells** (`placeBet`), locking the cell's multiplier and
-   reserving the potential payout against the bankroll.
-3. As wall-clock time reaches each column, the **oracle posts the real price**
-   (`setColumnPrice`); the band it lands in is the winning row.
-4. **Anyone settles** (`settleBet`): winners get `stake × multiplier`, losers'
-   stakes stay as house profit.
-
-See [`docs/design.md`](./docs/design.md) for the full model, fairness argument
-and liability accounting.
-
-## Network
-
-| Field        | Value                              |
-| ------------ | ---------------------------------- |
-| Network name | Giwa Sepolia                       |
-| Chain ID     | `91342`                            |
-| RPC URL      | `https://sepolia-rpc.giwa.io`      |
-| Explorer     | `https://sepolia-explorer.giwa.io` |
-
-## License
-
-MIT
+Full guides in [`docs/`](docs) — start with `production-architecture.md`.
