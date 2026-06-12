@@ -7,7 +7,6 @@ import { Zap, Home, LineChart, Skull, Trophy, User, TrendingUp, CandlestickChart
 import ModeToggle from "@/components/play/ModeToggle";
 import SoundToggle from "@/components/play/SoundToggle";
 import AnimatedNumber from "@/components/ui/AnimatedNumber";
-import { useDeposit } from "@/components/account/DepositModal";
 import { useFunds } from "@/lib/useFunds";
 
 const TABS = [
@@ -22,7 +21,6 @@ const TABS = [
 export default function TopNav() {
   const pathname = usePathname();
   const funds = useFunds();
-  const deposit = useDeposit();
 
   return (
     <header className="relative z-30 flex h-14 shrink-0 items-center gap-3 border-b border-line bg-ink/70 px-4 backdrop-blur">
@@ -76,16 +74,20 @@ export default function TopNav() {
 
       {/* right cluster: fund · deposit · mode · wallet · profile */}
       <div className="ml-auto flex items-center gap-2.5">
-        <button onClick={deposit.open} className="hidden flex-col items-end leading-none md:flex" title="Deposit / Withdraw">
-          <AnimatedNumber value={funds.amount} format={(n) => `${n.toLocaleString("en-US", { maximumFractionDigits: 2 })} USDC`} className="tabular text-[13px] font-bold text-cyan" />
+        <Link href="/terminal/tap" className="hidden flex-col items-end leading-none md:flex" title="Funds — claim, deposit & withdraw in any game panel">
+          <AnimatedNumber
+            value={funds.amount}
+            format={(n) => (funds.real ? `₩${Math.round(n).toLocaleString("en-US")}` : `${n.toLocaleString("en-US", { maximumFractionDigits: 2 })} USDC`)}
+            className={`tabular text-[13px] font-bold ${funds.real ? "text-magenta" : "text-cyan"}`}
+          />
           <span className="tabular text-[10px] text-faint">{funds.label}</span>
-        </button>
-        <button
-          onClick={deposit.open}
+        </Link>
+        <Link
+          href="/terminal/tap"
           className="btn-neon clip flex items-center gap-1.5 bg-cyan/10 px-3 py-1.5 font-display text-[12px] font-bold tracking-wide text-cyan"
         >
-          <Wallet size={14} /> DEPOSIT
-        </button>
+          <Wallet size={14} /> FUNDS
+        </Link>
         <ModeToggle />
         <SoundToggle />
         <ConnectButton accountStatus="address" chainStatus="none" showBalance={false} />

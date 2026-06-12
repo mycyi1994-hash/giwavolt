@@ -8,7 +8,6 @@ import { WagmiProvider } from "wagmi";
 import { wagmiConfig } from "@/lib/wagmi";
 import { PlayProvider } from "@/components/play/PlayProvider";
 import { MarketsProvider } from "@/components/predict/MarketsProvider";
-import { DepositProvider } from "@/components/account/DepositModal";
 import { ToastProvider } from "@/components/ui/Toast";
 
 export function Providers({ children }: { children: ReactNode }) {
@@ -21,9 +20,7 @@ export function Providers({ children }: { children: ReactNode }) {
         >
           <PlayProvider>
             <MarketsProvider>
-              <ToastProvider>
-                <DepositProvider>{children}</DepositProvider>
-              </ToastProvider>
+              <ToastProvider>{children}</ToastProvider>
             </MarketsProvider>
           </PlayProvider>
         </RainbowKitProvider>

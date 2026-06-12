@@ -1,20 +1,21 @@
 "use client";
 
 import { usePlay } from "@/components/play/PlayProvider";
-import { usdc, krw } from "./money";
+import { usdc, won, krw } from "./money";
 
-// Unified funds view. DEMO = play money. REAL = the deposited game balance
-// (Polymarket-style: fund a deposit address once, then play instantly with no
-// per-bet signatures). Both are denominated in USDC.
+// Unified funds view for the nav. DEMO = local play money (USDC). REAL = the
+// off-chain tKRW game balance (server ledger, no signatures to play).
 export function useFunds() {
   const { mode, balance } = usePlay();
+  const real = mode === "real";
   const amount = balance[mode];
   return {
     mode,
-    symbol: "USDC",
+    real,
+    symbol: real ? "tKRW" : "USDC",
     amount,
-    fmtMain: usdc(amount),
-    fmtSub: krw(amount),
-    label: mode === "real" ? "DEPOSITED" : "DEMO",
+    fmtMain: real ? won(amount) : usdc(amount),
+    fmtSub: real ? "off-chain" : krw(amount),
+    label: real ? "GAME BALANCE" : "DEMO",
   };
 }
