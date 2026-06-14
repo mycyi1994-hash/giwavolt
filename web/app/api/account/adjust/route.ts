@@ -1,26 +1,19 @@
-import { NextResponse } from "next/server";
-import { isAddress } from "viem";
+import { reqAddress, readBody, json, err, rateLimit } from "@/lib/server/api";
 import { adjustBalance } from "@/lib/server/ledger";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Every game stake (negative delta) and payout/refund (positive delta) flows
-// through here. No signature — this is the off-chain settlement primitive.
-// NOTE: client-reported, therefore cheatable; demo only (see lib/server/ledger).
+// Client-reported balance delta (legacy demo path; superseded by the
+// server-authoritative /api/game/* endpoints). NOTE: cheatable by design — used
+// only on testnet while the games are repointed to server settlement.
 export async function POST(req: Request) {
-  let body: { address?: string; delta?: number };
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "invalid body" }, { status: 400 });
-  }
-  if (!body.address || !isAddress(body.address)) {
-    return NextResponse.json({ error: "valid address required" }, { status: 400 });
-  }
-  if (typeof body.delta !== "number" || !Number.isFinite(body.delta)) {
-    return NextResponse.json({ error: "delta must be a number" }, { status: 400 });
-  }
-  const balance = await adjustBalance(body.address, body.delta);
-  return NextResponse.json({ ok: true, balance });
+  const body = await readBody<{ address?: string; delta?: number }>(req);
+  const address = reqAddress(body?.address);
+  if (!address) return err("valid address required");
+  if (typeof body?.delta !== "number" || !Number.isFinite(body.delta)) return err("delta must be a number");
+  if (!rateLimit(`adjust:${address.toLowerCase()}`, 240, 60_000)) return err("too many requests", 429);
+
+  const balance = await adjustBalance(address, body.delta);
+  return json({ ok: true, balance });
 }

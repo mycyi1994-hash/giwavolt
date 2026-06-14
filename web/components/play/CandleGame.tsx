@@ -35,13 +35,13 @@ export default function CandleGame() {
   useEffect(() => setStake(defaultStake(mode === "real")), [mode]);
   const modeRef = useRef(mode);
   modeRef.current = mode;
-  const liveBtc = useLivePrice(63500);
+  const liveBtc = useLivePrice();
 
-  const price = useRef(63500);
+  const price = useRef(95000);
   const cur = useRef<Record<number, Candle>>({
-    60: { open: 63500, high: 63500, low: 63500, close: 63500 },
-    180: { open: 63500, high: 63500, low: 63500, close: 63500 },
-    300: { open: 63500, high: 63500, low: 63500, close: 63500 },
+    60: { open: 95000, high: 95000, low: 95000, close: 95000 },
+    180: { open: 95000, high: 95000, low: 95000, close: 95000 },
+    300: { open: 95000, high: 95000, low: 95000, close: 95000 },
   });
   const hist = useRef<Record<number, Candle[]>>({ 60: [], 180: [], 300: [] });
   const bucket = useRef<Record<number, number>>({});
@@ -53,7 +53,7 @@ export default function CandleGame() {
 
     // seed varied past candles (independent per timeframe) so the strip isn't empty/identical
     for (const tf of TFS) {
-      let base = 63500 + (Math.random() - 0.5) * 400;
+      let base = liveBtc.getPrice() + (Math.random() - 0.5) * 400;
       const arr: Candle[] = [];
       for (let i = 0; i < 10; i++) {
         const open = base;

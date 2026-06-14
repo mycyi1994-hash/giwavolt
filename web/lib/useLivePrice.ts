@@ -2,66 +2,91 @@
 
 import { useEffect, useRef } from "react";
 
-// Live BTC/USD price straight from the user's browser: Binance trade websocket
-// (high-frequency, real ticks) with a REST poll fallback. Returns getters so a
-// render loop can read the latest price without re-rendering.
-export function useLivePrice(initial = 63500) {
-  const price = useRef(initial);
+// Live BTC/USD price for the browser games. Binance is geo-blocked in some
+// regions (incl. KR) and its websocket is often unreachable, which used to leave
+// the price stuck at the seed value — making Candle/Breakout look frozen. So we
+// poll CORS-friendly, non-geoblocked REST sources (Coinbase → Coingecko →
+// Binance), and additionally use the Binance trade socket when it connects.
+// A 100 ms easing loop keeps the line smooth between updates while staying
+// anchored to the real price.
+export function useLivePrice(initial = 95000) {
+  const target = useRef(initial); // latest real price
+  const shown = useRef(initial); // eased/displayed price
   const live = useRef(false);
 
   useEffect(() => {
+    let stop = false;
     let ws: WebSocket | null = null;
-    let poll: ReturnType<typeof setInterval> | null = null;
-    let closed = false;
 
-    const restOnce = async () => {
+    const set = (v: number) => {
+      if (Number.isFinite(v) && v > 0) {
+        target.current = v;
+        live.current = true;
+      }
+    };
+
+    const fetchRest = async () => {
+      try {
+        const r = await fetch("https://api.coinbase.com/v2/prices/BTC-USD/spot");
+        const j = await r.json();
+        const v = parseFloat(j?.data?.amount);
+        if (v) return set(v);
+      } catch {
+        /* try next */
+      }
+      try {
+        const r = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd");
+        const j = await r.json();
+        if (j?.bitcoin?.usd) return set(j.bitcoin.usd);
+      } catch {
+        /* try next */
+      }
       try {
         const r = await fetch("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT");
         const j = await r.json();
-        if (j?.price) {
-          price.current = parseFloat(j.price);
-          live.current = true;
-        }
+        if (j?.price) set(parseFloat(j.price));
       } catch {
-        /* ignore */
+        /* give up this round */
       }
     };
-    const startPoll = () => {
-      if (poll) return;
-      restOnce();
-      poll = setInterval(restOnce, 3000);
-    };
 
-    restOnce(); // instant value
+    fetchRest(); // instant value
+    const poll = setInterval(() => !stop && fetchRest(), 4000);
+
+    // best-effort high-frequency stream; ignored if blocked
     try {
       ws = new WebSocket("wss://stream.binance.com:9443/ws/btcusdt@trade");
       ws.onmessage = (e) => {
         try {
           const d = JSON.parse(e.data);
-          if (d?.p) {
-            price.current = parseFloat(d.p);
-            live.current = true;
-          }
+          if (d?.p) set(parseFloat(d.p));
         } catch {
           /* ignore */
         }
       };
-      ws.onerror = () => !closed && startPoll();
-      ws.onclose = () => !closed && startPoll();
     } catch {
-      startPoll();
+      /* no ws */
     }
 
+    // ease the shown price toward the real target + tiny jitter so the line
+    // stays lively even when updates only arrive every few seconds.
+    const ease = setInterval(() => {
+      const t = target.current;
+      const noise = (Math.random() - 0.5) * t * 0.00015;
+      shown.current += (t - shown.current) * 0.18 + noise;
+    }, 100);
+
     return () => {
-      closed = true;
+      stop = true;
+      clearInterval(poll);
+      clearInterval(ease);
       try {
         ws?.close();
       } catch {
         /* ignore */
       }
-      if (poll) clearInterval(poll);
     };
   }, []);
 
-  return { getPrice: () => price.current, isLive: () => live.current };
+  return { getPrice: () => shown.current, isLive: () => live.current };
 }

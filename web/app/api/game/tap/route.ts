@@ -1,5 +1,4 @@
-import { NextResponse } from "next/server";
-import { isAddress } from "viem";
+import { reqAddress, reqAmount, readBody, json, err, rateLimit } from "@/lib/server/api";
 import { ensureAccount, debit, credit } from "@/lib/server/ledger";
 import { nextRoll, setClientSeed } from "@/lib/server/fair";
 
@@ -13,40 +12,28 @@ const EDGE_BPS = 700; // 7% house edge
 // chance; the SERVER rolls (provably-fair) and settles. The browser only learns
 // the result — it can't fake a win or set its own balance.
 export async function POST(req: Request) {
-  let body: { address?: string; stake?: number; mult?: number; clientSeed?: string };
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "invalid body" }, { status: 400 });
-  }
-  const { address, stake, mult, clientSeed } = body;
-  if (!address || !isAddress(address)) return NextResponse.json({ error: "valid address required" }, { status: 400 });
-  if (typeof stake !== "number" || !(stake > 0)) return NextResponse.json({ error: "stake must be positive" }, { status: 400 });
-  if (typeof mult !== "number" || !(mult > 1)) return NextResponse.json({ error: "bad multiplier" }, { status: 400 });
+  const body = await readBody<{ address?: string; stake?: number; mult?: number; clientSeed?: string }>(req);
+  const address = reqAddress(body?.address);
+  const stake = reqAmount(body?.stake);
+  if (!address) return err("valid address required");
+  if (stake === null) return err("stake must be positive");
+  if (typeof body?.mult !== "number" || !(body.mult > 1)) return err("bad multiplier");
+  if (!rateLimit(`tap:${address.toLowerCase()}`, 240, 60_000)) return err("too many requests", 429);
 
-  const winChanceBps = Math.round((BPS - EDGE_BPS) / mult);
-  if (winChanceBps < 1 || winChanceBps >= BPS) return NextResponse.json({ error: "odds out of range" }, { status: 400 });
+  const winChanceBps = Math.round((BPS - EDGE_BPS) / body.mult);
+  if (winChanceBps < 1 || winChanceBps >= BPS) return err("odds out of range");
 
   await ensureAccount(address);
-  if (clientSeed && typeof clientSeed === "string") await setClientSeed(address, clientSeed);
+  if (body.clientSeed && typeof body.clientSeed === "string") await setClientSeed(address, body.clientSeed);
 
   // Take the stake first (atomic, can't go negative).
   const afterStake = await debit(address, stake, "bet", "tap");
-  if (afterStake === null) return NextResponse.json({ error: "insufficient balance" }, { status: 402 });
+  if (afterStake === null) return err("insufficient balance", 402);
 
   const r = await nextRoll(address, BPS);
   const win = r.roll < winChanceBps;
-  const payout = win ? Math.round(stake * mult * 100) / 100 : 0;
+  const payout = win ? Math.round(stake * body.mult * 100) / 100 : 0;
   const balance = win ? await credit(address, payout, "payout", "tap") : afterStake;
 
-  return NextResponse.json({
-    ok: true,
-    win,
-    payout,
-    balance,
-    roll: r.roll,
-    winChanceBps,
-    nonce: r.nonce,
-    serverSeedHash: r.hash,
-  });
+  return json({ ok: true, win, payout, balance, roll: r.roll, winChanceBps, nonce: r.nonce, serverSeedHash: r.hash });
 }

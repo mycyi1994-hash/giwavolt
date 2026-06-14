@@ -37,8 +37,10 @@ export async function credit(address: string, amount: number, kind: string, ref?
   const db = getSql();
   const a = norm(address);
   const amt = round2(amount);
-  await ensureAccount(a);
-  const r = await db`update accounts set balance = balance + ${amt} where address=${a} returning balance`;
+  // single upsert that increments (no separate ensureAccount round-trip)
+  const r = await db`insert into accounts (address, balance) values (${a}, ${amt})
+                     on conflict (address) do update set balance = accounts.balance + ${amt}
+                     returning balance`;
   await db`insert into txns (address, delta, kind, ref) values (${a}, ${amt}, ${kind}, ${ref ?? null})`;
   return Number(r[0].balance);
 }
@@ -48,9 +50,11 @@ export async function credit(address: string, amount: number, kind: string, ref?
 export async function adjustBalance(address: string, delta: number): Promise<number> {
   const db = getSql();
   const a = norm(address);
-  await ensureAccount(a);
-  const r = await db`update accounts set balance = greatest(0, balance + ${round2(delta)}) where address=${a} returning balance`;
-  await db`insert into txns (address, delta, kind, ref) values (${a}, ${round2(delta)}, 'adjust', null)`;
+  const d = round2(delta);
+  const r = await db`insert into accounts (address, balance) values (${a}, greatest(0, ${d}))
+                     on conflict (address) do update set balance = greatest(0, accounts.balance + ${d})
+                     returning balance`;
+  await db`insert into txns (address, delta, kind, ref) values (${a}, ${d}, 'adjust', null)`;
   return Number(r[0].balance);
 }
 
@@ -61,17 +65,18 @@ export async function claim(
 ): Promise<{ ok: true; balance: number } | { ok: false; error: string }> {
   const db = getSql();
   const a = norm(address);
-  await ensureAccount(a);
+  const amt = round2(amount);
   if (cooldownMs > 0) {
     const rows = await db`select last_claim from claims where address=${a}`;
     if (rows.length && rows[0].last_claim) {
-      const last = new Date(rows[0].last_claim).getTime();
-      const wait = cooldownMs - (Date.now() - last);
+      const wait = cooldownMs - (Date.now() - new Date(rows[0].last_claim).getTime());
       if (wait > 0) return { ok: false, error: `Wait ~${Math.ceil(wait / 1000)}s before claiming again.` };
     }
   }
   await db`insert into claims (address, last_claim) values (${a}, now()) on conflict (address) do update set last_claim = now()`;
-  const r = await db`update accounts set balance = balance + ${round2(amount)} where address=${a} returning balance`;
-  await db`insert into txns (address, delta, kind, ref) values (${a}, ${round2(amount)}, 'claim', null)`;
+  const r = await db`insert into accounts (address, balance) values (${a}, ${amt})
+                     on conflict (address) do update set balance = accounts.balance + ${amt}
+                     returning balance`;
+  await db`insert into txns (address, delta, kind, ref) values (${a}, ${amt}, 'claim', null)`;
   return { ok: true, balance: Number(r[0].balance) };
 }

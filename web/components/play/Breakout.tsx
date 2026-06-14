@@ -27,7 +27,7 @@ export default function Breakout() {
   const real = mode === "real";
   const presets = real ? REAL_STAKES : DEMO_STAKES;
   const toast = useToast();
-  const liveBtc = useLivePrice(63500);
+  const liveBtc = useLivePrice();
   const [stake, setStake] = useState(5);
   const [distI, setDistI] = useState(1);
   const [, force] = useState(0);
@@ -35,7 +35,7 @@ export default function Breakout() {
   useEffect(() => setMounted(true), []);
   useEffect(() => setStake(defaultStake(mode === "real")), [mode]);
 
-  const price = useRef(63500);
+  const price = useRef(95000);
   const histRef = useRef<number[]>([]);
   const bet = useRef<Bet | null>(null);
   const status = useRef<"idle" | "live" | "win" | "lose">("idle");

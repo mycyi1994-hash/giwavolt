@@ -1,9 +1,9 @@
-import { NextResponse } from "next/server";
-import { createPublicClient, createWalletClient, http, isAddress, parseEther } from "viem";
+import { createPublicClient, createWalletClient, http, parseEther } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { giwaSepolia } from "@/lib/chain";
 import { GAMEVAULT_ADDRESS, gameVaultAbi, gameVaultEnabled, voucherDomain, withdrawVoucherTypes } from "@/lib/gamevault";
 import { debit, credit, getBalance } from "@/lib/server/ledger";
+import { reqAddress, reqAmount, readBody, json, err, rateLimit } from "@/lib/server/api";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,24 +14,21 @@ export const dynamic = "force-dynamic";
 export async function POST(req: Request) {
   const key = (process.env.OPERATOR_PRIVATE_KEY ?? process.env.FAUCET_PRIVATE_KEY) as `0x${string}` | undefined;
   if (!key || !gameVaultEnabled) {
-    return NextResponse.json({ error: "Withdrawals not configured (OPERATOR_PRIVATE_KEY + NEXT_PUBLIC_GAMEVAULT_ADDRESS)." }, { status: 503 });
+    return err("Withdrawals not configured (OPERATOR_PRIVATE_KEY + NEXT_PUBLIC_GAMEVAULT_ADDRESS).", 503);
   }
 
-  let body: { address?: string; amount?: number };
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "invalid body" }, { status: 400 });
-  }
-  const { address, amount } = body;
-  if (!address || !isAddress(address)) return NextResponse.json({ error: "valid address required" }, { status: 400 });
-  if (typeof amount !== "number" || !(amount > 0)) return NextResponse.json({ error: "amount must be positive" }, { status: 400 });
+  const body = await readBody<{ address?: string; amount?: number }>(req);
+  const address = reqAddress(body?.address);
+  const amount = reqAmount(body?.amount);
+  if (!address) return err("valid address required");
+  if (amount === null) return err("amount must be positive");
+  if (!rateLimit(`withdraw:${address.toLowerCase()}`, 10, 60_000)) return err("too many requests — slow down", 429);
 
-  if ((await getBalance(address)) < amount) return NextResponse.json({ error: "insufficient game balance" }, { status: 400 });
+  if ((await getBalance(address)) < amount) return err("insufficient game balance");
 
   // Debit first so a double-submit can't double-withdraw.
   const balance = await debit(address, amount, "withdraw", "vault");
-  if (balance === null) return NextResponse.json({ error: "insufficient game balance" }, { status: 402 });
+  if (balance === null) return err("insufficient game balance", 402);
 
   try {
     const account = privateKeyToAccount(key);
@@ -58,10 +55,9 @@ export async function POST(req: Request) {
       args: [address as `0x${string}`, cumulative, sig],
     });
     await publicClient.waitForTransactionReceipt({ hash: tx });
-    return NextResponse.json({ ok: true, balance, tx });
+    return json({ ok: true, balance, tx });
   } catch (e: any) {
     await credit(address, amount, "refund", "withdraw-failed"); // give it back
-    const msg = typeof e?.shortMessage === "string" ? e.shortMessage : "withdraw failed";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return err(typeof e?.shortMessage === "string" ? e.shortMessage : "withdraw failed", 500);
   }
 }

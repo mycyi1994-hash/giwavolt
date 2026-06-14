@@ -1,5 +1,4 @@
-import { NextResponse } from "next/server";
-import { isAddress } from "viem";
+import { reqAddress, readBody, json, err, rateLimit } from "@/lib/server/api";
 import { claim } from "@/lib/server/ledger";
 
 export const runtime = "nodejs";
@@ -11,16 +10,12 @@ const CLAIM_TKRW = Number(process.env.FAUCET_DRIP_TKRW ?? 1_000_000);
 const CLAIM_COOLDOWN_MS = Number(process.env.FAUCET_COOLDOWN_MS ?? 0); // 0 = no cooldown (demo)
 
 export async function POST(req: Request) {
-  let body: { address?: string };
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "invalid body" }, { status: 400 });
-  }
-  if (!body.address || !isAddress(body.address)) {
-    return NextResponse.json({ error: "valid address required" }, { status: 400 });
-  }
-  const res = await claim(body.address, CLAIM_TKRW, CLAIM_COOLDOWN_MS);
-  if (!res.ok) return NextResponse.json({ error: res.error }, { status: 429 });
-  return NextResponse.json({ ok: true, balance: res.balance, claimed: CLAIM_TKRW });
+  const body = await readBody<{ address?: string }>(req);
+  const address = reqAddress(body?.address);
+  if (!address) return err("valid address required");
+  if (!rateLimit(`claim:${address.toLowerCase()}`, 20, 60_000)) return err("too many requests — slow down", 429);
+
+  const res = await claim(address, CLAIM_TKRW, CLAIM_COOLDOWN_MS);
+  if (!res.ok) return err(res.error, 429);
+  return json({ ok: true, balance: res.balance, claimed: CLAIM_TKRW });
 }
