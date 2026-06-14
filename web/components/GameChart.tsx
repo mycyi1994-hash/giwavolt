@@ -63,6 +63,7 @@ export default function GameChart({
   onZoom,
   onRealTap,
   getBalance,
+  getRealPrice,
 }: {
   bidSize: number;
   zoom?: number;
@@ -75,6 +76,7 @@ export default function GameChart({
   onZoom?: (factor: number) => void;
   onRealTap?: (mult: number, sx: number, sy: number) => void;
   getBalance: () => number;
+  getRealPrice?: () => number;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -94,14 +96,20 @@ export default function GameChart({
   unitRef.current = unit;
   const balanceRef = useRef(getBalance);
   balanceRef.current = getBalance;
+  const realPriceRef = useRef(getRealPrice);
+  realPriceRef.current = getRealPrice;
 
   useEffect(() => {
     const canvas = canvasRef.current!;
     const wrap = wrapRef.current!;
     const ctx = canvas.getContext("2d")!;
 
-    const anchor = 1673.49;
-    const step = anchor * STEP_PCT;
+    // The displayed level tracks the REAL price (getRealPrice); the grid/edge use
+    // the price's *deviation* from this anchor, which is anchor-independent — so
+    // the multiplier math stays exact while the chart shows live BTC.
+    const seed = realPriceRef.current?.();
+    let anchor = seed && seed > 0 ? seed : 1673.49;
+    let step = anchor * STEP_PCT;
     let price = anchor;
     let renderPrice = anchor; // eased toward `price` every frame for a smooth head
     const history: { t: number; p: number }[] = [{ t: Date.now(), p: price }];
@@ -198,6 +206,23 @@ export default function GameChart({
     function stepPrice(now: number) {
       while (now - lastTick >= TICK_MS) {
         lastTick += TICK_MS;
+        // re-anchor toward the live price, shifting everything by the same delta
+        // so the deviation (price − anchor) — and therefore every band index and
+        // multiplier outcome — is preserved. Keeps the chart continuous.
+        const real = realPriceRef.current?.();
+        if (real && real > 0) {
+          const d = (real - anchor) * 0.08;
+          if (Math.abs(d) > 1e-9) {
+            anchor += d;
+            step = anchor * STEP_PCT;
+            price += d;
+            renderPrice += d;
+            for (const h of history) h.p += d;
+            range.min += d;
+            range.max += d;
+            for (const col of columns) if (col.winPrice) col.winPrice += d;
+          }
+        }
         const vol = VOL_PER_SQRT_SEC * (ambientRef.current ? 2.4 : 1);
         price += price * vol * Math.sqrt(dt) * gaussian() + (anchor - price) * 0.0006;
         history.push({ t: lastTick, p: price });

@@ -8,6 +8,7 @@ import LiveFeed from "@/components/play/LiveFeed";
 import ConnectGate from "@/components/play/ConnectGate";
 import { usePlay } from "@/components/play/PlayProvider";
 import { useToast } from "@/components/ui/Toast";
+import { useLivePrice } from "@/lib/useLivePrice";
 import { sfx } from "@/lib/sound";
 import { usdc, won } from "@/lib/money";
 
@@ -19,9 +20,10 @@ export default function TapTradingPage() {
   const { mode, balance, adjust } = usePlay();
   const real = mode === "real";
   const toast = useToast();
+  const btc = useLivePrice(); // real BTC/USD for the chart level
 
   const [bid, setBid] = useState(5);
-  const [price, setPrice] = useState(1673.49);
+  const [price, setPrice] = useState(95000);
   const [zoom, setZoom] = useState(1);
   const [stats, setStats] = useState({ live: 0, won: 0, profit: 0 });
 
@@ -107,6 +109,7 @@ export default function TapTradingPage() {
             onBalanceDelta={onBalanceDelta}
             onBet={onBet}
             getBalance={getBalance}
+            getRealPrice={btc.getPrice}
           />
         </main>
       </div>

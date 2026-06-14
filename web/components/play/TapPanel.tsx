@@ -89,8 +89,8 @@ export default function TapPanel({ price, bid, onBid }: { price: number; bid: nu
 
       <div className="panel clip flex items-center justify-between px-3 py-2.5">
         <span className="flex items-center gap-2 font-display text-sm font-bold">
-          <span className="grid h-6 w-6 place-items-center rounded-full bg-[#627eea] text-[10px] text-white">Ξ</span>
-          ETH / USD
+          <span className="grid h-6 w-6 place-items-center rounded-full bg-[#f7931a] text-[10px] text-white">₿</span>
+          BTC / USD
         </span>
         <span className="tabular text-[15px] font-bold text-lime neon-lime">{price.toFixed(2)}</span>
       </div>
