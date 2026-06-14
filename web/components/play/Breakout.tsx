@@ -9,8 +9,9 @@ import QuoteTicker from "@/components/ui/QuoteTicker";
 import { useToast } from "@/components/ui/Toast";
 import { useLivePrice } from "@/lib/useLivePrice";
 import { sfx } from "@/lib/sound";
-import { amt, DEMO_STAKES, REAL_STAKES, defaultStake } from "@/lib/money";
-import ClaimButton from "./ClaimButton";
+import { amt } from "@/lib/money";
+import { useGameStake } from "@/lib/useGameStake";
+import GameBalance from "./GameBalance";
 
 const HOUSE_EDGE = 0.05; // baked into the payout (not displayed)
 const PAYOUT = +(2 * (1 - HOUSE_EDGE)).toFixed(2); // symmetric barriers ⇒ ~50/50 → 1.90×
@@ -23,17 +24,14 @@ const DIST = [
 type Bet = { dir: "up" | "down"; stake: number; entry: number; up: number; down: number };
 
 export default function Breakout() {
-  const { mode, balance, adjust } = usePlay();
-  const real = mode === "real";
-  const presets = real ? REAL_STAKES : DEMO_STAKES;
+  const { balance, adjust } = usePlay();
+  const { mode, real, stake, setStake, presets } = useGameStake();
   const toast = useToast();
   const liveBtc = useLivePrice();
-  const [stake, setStake] = useState(5);
   const [distI, setDistI] = useState(1);
   const [, force] = useState(0);
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
-  useEffect(() => setStake(defaultStake(mode === "real")), [mode]);
 
   const price = useRef(95000);
   const histRef = useRef<number[]>([]);
@@ -106,12 +104,7 @@ export default function Breakout() {
           </div>
           <ModeToggle />
         </div>
-        <div>
-          <div className="mb-1 font-mono text-[10px] tracking-[0.2em] text-faint">{real ? "GAME BALANCE (tKRW)" : "BALANCE"}</div>
-          <div className={`tabular text-[26px] font-black leading-none ${real ? "text-magenta neon-magenta" : "text-cyan neon-cyan"}`}>{amt(real, balance[mode])}</div>
-          {real && <div className="tabular mt-0.5 text-[11px] text-faint">off-chain · no signature</div>}
-          {real && <ClaimButton className="mt-2 w-full" />}
-        </div>
+        <GameBalance real={real} amount={balance[mode]} demoLabel="BALANCE" />
         <div className={live ? "pointer-events-none opacity-40" : ""}>
           <div className="mb-2 font-mono text-[10px] tracking-[0.2em] text-faint">STAKE ({real ? "tKRW" : "USDC"})</div>
           <div className="grid grid-cols-4 gap-1.5">

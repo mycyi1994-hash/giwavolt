@@ -11,22 +11,18 @@ import { useToast } from "@/components/ui/Toast";
 import { sfx } from "@/lib/sound";
 import { newBoard, multiplierAfter, revealAll, DIFFICULTIES, DIFFICULTY_ORDER, totalTiles } from "@/lib/death";
 import type { Difficulty } from "@/lib/types";
-import { krw, amt, DEMO_STAKES, REAL_STAKES, defaultStake } from "@/lib/money";
-import ClaimButton from "./ClaimButton";
+import { krw, amt } from "@/lib/money";
+import { useGameStake } from "@/lib/useGameStake";
+import GameBalance from "./GameBalance";
 
 export default function DeathFun() {
-  const { mode, balance, adjust, death, setDeath } = usePlay();
-  const real = mode === "real";
-  const presets = real ? REAL_STAKES : DEMO_STAKES;
+  const { balance, adjust, death, setDeath } = usePlay();
+  const { mode, real, stake, setStake, presets } = useGameStake();
   const toast = useToast();
-  const [stake, setStake] = useState(5);
   const [custom, setCustom] = useState("");
   const [diff, setDiff] = useState<Difficulty>("medium");
   const [shake, setShake] = useState(false);
   const [burst, setBurst] = useState(false);
-
-  // default stake follows the mode (USDC play money vs tKRW)
-  useEffect(() => setStake(defaultStake(mode === "real")), [mode]);
 
   useEffect(() => {
     if (!death) setDeath(newBoard(mode, diff));
@@ -148,10 +144,7 @@ export default function DeathFun() {
         </div>
 
         <div>
-          <div className="mb-1 font-mono text-[10px] tracking-[0.2em] text-faint">{real ? "GAME BALANCE (tKRW)" : "BALANCE"}</div>
-          <div className={`tabular text-[24px] font-black leading-none ${real ? "text-magenta neon-magenta" : "text-cyan neon-cyan"}`}>{amt(real, balance[mode])}</div>
-          <div className="tabular text-[11px] text-faint">{real ? "off-chain · no signature" : krw(balance[mode])}</div>
-          {real && <ClaimButton className="mt-2 w-full" />}
+          <GameBalance real={real} amount={balance[mode]} demoLabel="BALANCE" demoSub={krw(balance.demo)} />
         </div>
 
         <div className={playing ? "pointer-events-none opacity-40" : ""}>

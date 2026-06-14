@@ -377,7 +377,6 @@ export default function GameChart({
 
       ctx.clearRect(0, 0, W, H);
       const nowX = W * NW();
-      const lockX = xForTime(now + MIN_BET_HORIZON * 1000, now);
       const firstBand = bandForPrice(range.min) - 1;
       const lastBand = bandForPrice(range.max) + 1;
 
@@ -422,8 +421,8 @@ export default function GameChart({
           ctx.lineWidth = hot ? 2 : glow ? 1.4 : 1;
           ctx.stroke();
           // multiplier label — scales with the cell, big payouts get loud
-          if (ch > 11 && cw > 20) {
-            const fs = Math.max(9, Math.min(ch * 0.5, cw * 0.42, 30));
+          if (ch > 10 && cw > 16) {
+            const fs = Math.max(12, Math.min(ch * 0.66, cw * 0.58, 46));
             const mx = (x0 + x1) / 2;
             const my = (yTop + yBot) / 2;
             ctx.font = `${hot ? 900 : inten > 0.4 ? 700 : 600} ${fs.toFixed(0)}px ${hot ? "var(--font-display, sans-serif)" : "var(--font-mono, monospace)"}`;
@@ -443,86 +442,8 @@ export default function GameChart({
         }
       }
 
-      // ---- locked zone (< MIN_BET_HORIZON s) — full neon spectacle ----
-      if (lockX > nowX && !ambientRef.current) {
-        const pulse = 0.5 + 0.5 * Math.sin(now / 280);
-        const ph = (now / 16) % 16;
-        const top = plotTop;
-        const bot = plotBot();
-        const m = 7;
-        const zx0 = nowX + m;
-        const zx1 = lockX - m;
-        const cx = (nowX + lockX) / 2;
-        const PAL = [[0, 229, 255], [255, 43, 214], [57, 255, 20], [255, 210, 63], [157, 77, 255]];
-        const colAt = (k: number) => PAL[((Math.floor(k) % PAL.length) + PAL.length) % PAL.length];
-        const rgb = (c: number[], a = 1) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
-
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(zx0, top, zx1 - zx0, bot - top);
-        ctx.clip();
-        // shifting cyan↔magenta gradient fill
-        const a = 0.5 + 0.5 * Math.sin(now / 600);
-        const grad = ctx.createLinearGradient(zx0, top, zx1, bot);
-        grad.addColorStop(0, `rgba(0,229,255,${(0.06 + 0.07 * a).toFixed(3)})`);
-        grad.addColorStop(0.5, "rgba(14,6,22,0.6)");
-        grad.addColorStop(1, `rgba(255,43,214,${(0.06 + 0.07 * (1 - a)).toFixed(3)})`);
-        ctx.fillStyle = grad;
-        ctx.fillRect(zx0, top, zx1 - zx0, bot - top);
-        // fast multi-colour diagonal sheen stripes
-        ctx.lineWidth = 3;
-        for (let x = zx0 - 90 + ph; x < zx1 + 90; x += 16) {
-          ctx.strokeStyle = rgb(colAt(x / 16), 0.07 + pulse * 0.1);
-          ctx.beginPath();
-          ctx.moveTo(x, top);
-          ctx.lineTo(x + 90, bot);
-          ctx.stroke();
-        }
-        // vertical sweeping highlight
-        const sweepY = top + ((now / 11) % (bot - top));
-        const sg = ctx.createLinearGradient(0, sweepY - 44, 0, sweepY + 44);
-        sg.addColorStop(0, "rgba(255,255,255,0)");
-        sg.addColorStop(0.5, "rgba(255,255,255,0.12)");
-        sg.addColorStop(1, "rgba(255,255,255,0)");
-        ctx.fillStyle = sg;
-        ctx.fillRect(zx0, sweepY - 44, zx1 - zx0, 88);
-        ctx.restore();
-
-        // double pulsing colour-cycling frame
-        for (const [w, blur, al] of [[3, 18, 0.5], [1.5, 8, 0.9]]) {
-          const fc = colAt(now / 300);
-          ctx.strokeStyle = rgb(fc, al * (0.6 + pulse * 0.4));
-          ctx.shadowColor = rgb(fc, 0.9);
-          ctx.shadowBlur = blur + pulse * 12;
-          ctx.lineWidth = w;
-          roundRect(ctx, zx0, top + m, zx1 - zx0, bot - top - 2 * m, 8);
-          ctx.stroke();
-        }
-        ctx.shadowBlur = 0;
-
-        // big vertical "LOCKED" — letters cycle through neon colours
-        const letters = "LOCKED".split("");
-        // size by both the vertical room and the zone width so the glyphs are as big as will fit
-        const lh = Math.min(96, (bot - top - 3 * m) / (letters.length + 0.6), (zx1 - zx0) * 0.92);
-        const startY = (top + bot) / 2 - (letters.length * lh) / 2;
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.font = `900 ${Math.round(lh * 0.92)}px var(--font-display, sans-serif)`;
-        letters.forEach((ch, i) => {
-          const c = colAt(i + now / 280);
-          ctx.shadowColor = rgb(c, 1);
-          ctx.shadowBlur = 18 + pulse * 18;
-          ctx.lineWidth = Math.max(2, lh * 0.06);
-          ctx.strokeStyle = "rgba(6,6,14,0.6)";
-          ctx.strokeText(ch, cx, startY + i * lh);
-          ctx.fillStyle = rgb(c);
-          ctx.fillText(ch, cx, startY + i * lh);
-        });
-        ctx.shadowBlur = 0;
-        ctx.font = `800 ${Math.round(lh * 0.34)}px var(--font-display, sans-serif)`;
-        ctx.fillStyle = "rgba(255,255,255,0.92)";
-        ctx.fillText("TOO LATE", cx, startY + letters.length * lh + lh * 0.15);
-      }
+      // (locked-zone spectacle removed — cells under the bet horizon simply
+      // aren't drawn, leaving a clean gap before the bettable grid.)
 
       // ---- active bet markers ----
       ctx.font = "700 12px var(--font-display, sans-serif)";
