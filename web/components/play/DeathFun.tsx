@@ -45,11 +45,11 @@ export default function DeathFun() {
   const value = +(death.stake * death.multiplier).toFixed(2);
   const nextMult = multiplierAfter(death.picks + 1, death.bombs, total);
 
-  // tile size scales with the board so even ULTRA (25×25) fits on screen,
-  // capped at 64px so the small boards still read big.
+  // tile size scales with the board so even ULTRA fits on screen, capped at
+  // 64px so small boards still read big.
   const gap = death.dim > 13 ? 4 : 8;
-  const BOARD_MAX = 500; // px the square board may occupy in the play area
-  const tilePx = Math.max(12, Math.min(64, Math.floor((BOARD_MAX - (death.dim - 1) * gap) / death.dim)));
+  const BOARD_MAX = 600; // px the square board may occupy in the play area
+  const tilePx = Math.max(16, Math.min(64, Math.floor((BOARD_MAX - (death.dim - 1) * gap) / death.dim)));
   const animate = death.dim <= 13;
 
   const start = () => {

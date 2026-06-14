@@ -51,26 +51,36 @@ export default function CandleGame() {
   useEffect(() => {
     for (const tf of TFS) bucket.current[tf.sec] = Math.floor(Date.now() / (tf.sec * 1000));
 
-    // seed varied past candles (independent per timeframe) so the strip isn't empty/identical
-    for (const tf of TFS) {
-      let base = liveBtc.getPrice() + (Math.random() - 0.5) * 400;
-      const arr: Candle[] = [];
-      for (let i = 0; i < 10; i++) {
-        const open = base;
-        const close = open + (Math.random() - 0.5) * base * 0.005;
-        const high = Math.max(open, close) + Math.random() * base * 0.0025;
-        const low = Math.min(open, close) - Math.random() * base * 0.0025;
-        arr.push({ open, high, low, close });
-        base = close;
+    // seed varied past candles per timeframe so the strip isn't empty
+    const seed = (basePrice: number) => {
+      for (const tf of TFS) {
+        let base = basePrice + (Math.random() - 0.5) * basePrice * 0.003;
+        const arr: Candle[] = [];
+        for (let i = 0; i < 10; i++) {
+          const open = base;
+          const close = open + (Math.random() - 0.5) * base * 0.004;
+          const high = Math.max(open, close) + Math.random() * base * 0.002;
+          const low = Math.min(open, close) - Math.random() * base * 0.002;
+          arr.push({ open, high, low, close });
+          base = close;
+        }
+        hist.current[tf.sec] = arr;
+        cur.current[tf.sec] = { open: base, high: base, low: base, close: base };
       }
-      hist.current[tf.sec] = arr;
-      cur.current[tf.sec] = { open: base, high: base, low: base, close: base };
-      if (tf.sec === 60) price.current = base;
-    }
+      price.current = basePrice;
+    };
+    seed(liveBtc.getPrice());
+    let seededReal = false;
 
     const id = setInterval(() => {
-      price.current = liveBtc.getPrice(); // real BTC/USD
-      const p = price.current;
+      const p = liveBtc.getPrice();
+      // re-seed around the real price once the live feed arrives — otherwise the
+      // first candle spans placeholder→real and renders as one giant candle.
+      if (!seededReal && liveBtc.isLive()) {
+        if (!TFS.some((tf) => bet.current[tf.sec])) seed(p);
+        seededReal = true;
+      }
+      price.current = p;
       const now = Date.now();
       for (const tf of TFS) {
         const c = cur.current[tf.sec];

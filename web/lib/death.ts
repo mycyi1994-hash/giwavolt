@@ -15,7 +15,7 @@ export const DIFFICULTIES: Record<Difficulty, { label: string; dim: number; dens
   low: { label: "NORMAL", dim: 3, density: 0.55, safePct: 45 },
   medium: { label: "MEDIUM", dim: 6, density: 0.62, safePct: 38 },
   high: { label: "HARD", dim: 13, density: 0.72, safePct: 28 },
-  ultra: { label: "ULTRA", dim: 25, density: 0.84, safePct: 16 },
+  ultra: { label: "ULTRA", dim: 20, density: 0.84, safePct: 16 },
 };
 
 export const DIFFICULTY_ORDER: Difficulty[] = ["low", "medium", "high", "ultra"];
