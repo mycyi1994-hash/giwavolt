@@ -31,6 +31,7 @@ export default function Breakout() {
   const [distI, setDistI] = useState(1);
   const [, force] = useState(0);
   const [mounted, setMounted] = useState(false);
+  const [ready, setReady] = useState(false); // render only once the live price is in
   useEffect(() => setMounted(true), []);
 
   const price = useRef(95000);
@@ -42,8 +43,17 @@ export default function Breakout() {
   ctxRef.current = { mode, stake, distI, bal: balance };
 
   useEffect(() => {
+    const revealTimer = setTimeout(() => setReady(true), 2500);
+    let seededReal = false;
     const id = setInterval(() => {
       const p = liveBtc.getPrice();
+      // once the real price arrives, drop any placeholder-priced history so the
+      // line doesn't spike from the seed value to the real BTC price.
+      if (!seededReal && liveBtc.isLive()) {
+        histRef.current = [];
+        seededReal = true;
+        setReady(true);
+      }
       price.current = p;
       const h = histRef.current;
       h.push(p);
@@ -73,7 +83,10 @@ export default function Breakout() {
       }
       force((t) => t + 1);
     }, 80);
-    return () => clearInterval(id);
+    return () => {
+      clearInterval(id);
+      clearTimeout(revealTimer);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -129,16 +142,22 @@ export default function Breakout() {
 
       <main className="relative min-w-0 flex-1 overflow-hidden bg-[#070710]">
         {/* full-bleed race track */}
-        <Track hist={histRef.current} bet={b} price={price.current} dist={DIST[distI].pct} flashing={flashing} win={status.current === "win"} />
+        {ready ? (
+          <Track hist={histRef.current} bet={b} price={price.current} dist={DIST[distI].pct} flashing={flashing} win={status.current === "win"} />
+        ) : (
+          <div className="absolute inset-0 z-10 grid place-items-center font-mono text-[12px] tracking-widest text-faint">
+            <span className="animate-flicker">CONNECTING TO BTC/USD…</span>
+          </div>
+        )}
 
         <LiveFeed className="absolute bottom-24 left-3 top-3 z-20 hidden w-56 overflow-hidden lg:block" />
 
         {/* header overlay */}
         <div className="pointer-events-none absolute inset-x-0 top-3 z-20 flex items-center justify-between px-4">
           <span className="flex items-center gap-1.5 border border-lime/50 bg-ink/70 px-2.5 py-1 font-mono text-[10px] tracking-wider text-lime clip backdrop-blur">
-            <span className="h-1.5 w-1.5 rounded-full bg-lime animate-flicker" /> LIVE · BINANCE BTC/USD
+            <span className="h-1.5 w-1.5 rounded-full bg-lime animate-flicker" /> LIVE · BTC/USD
           </span>
-          <span className="tabular font-display text-3xl font-black text-txt neon-cyan">${price.current.toLocaleString("en-US", { maximumFractionDigits: 0 })}</span>
+          <span className="tabular font-display text-3xl font-black text-txt neon-cyan">{ready ? `$${price.current.toLocaleString("en-US", { maximumFractionDigits: 0 })}` : "—"}</span>
         </div>
 
         {/* controls overlay */}
