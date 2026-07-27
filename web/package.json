@@ -11,6 +11,7 @@
     "verify:vol": "tsx scripts/verify-vol.ts",
     "verify:edge": "tsx scripts/verify-edge.ts",
     "verify:tap-api": "tsx scripts/verify-tap-api.mts",
+    "verify:death-api": "tsx scripts/verify-death-api.mts",
     "verify:tap-http": "tsx scripts/verify-tap-http.mjs",
     "mock:exchange": "node scripts/mock-exchange.mjs"
   },

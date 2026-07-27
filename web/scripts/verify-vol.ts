@@ -1,7 +1,7 @@
 // Does the realized-vol estimator actually recover the volatility of a price
 // series? If it doesn't, the whole grid is mispriced, so this is the load-
 // bearing test for the real-price switch.
-import { measureVol, type Tick } from "../lib/vol";
+import { measureVol, measureVolForPricing, VOL_MIN, VOL_MAX, type Tick } from "../lib/vol";
 
 // Box-Muller with a fixed seed so the run is reproducible.
 let seed = 42;
@@ -89,6 +89,37 @@ const gappy: Tick[] = [
 const g = measureVol(gappy);
 console.log(`  ${g.samples <= 1 ? "PASS" : "FAIL"} a 15-minute gap contributes ${g.samples} usable return(s)`);
 if (g.samples > 1) fails++;
+
+console.log("\nout-of-range volatility is refused, not clamped:");
+{
+  // Clamping a genuinely fast market down to the ceiling would under-price the
+  // grid's tail cells exactly when doing so costs the most.
+  const tooFast = measureVol(makeTicks(VOL_MAX * 2.5, 240, 12));
+  console.log(`  ${tooFast.vol === null ? "PASS" : "FAIL"} above the ceiling → ${tooFast.vol === null ? "refused" : tooFast.vol.toExponential(2)}`);
+  if (tooFast.vol !== null) fails++;
+  const tooSlow = measureVol(makeTicks(VOL_MIN * 0.3, 240, 12));
+  console.log(`  ${tooSlow.vol === null ? "PASS" : "FAIL"} below the floor → ${tooSlow.vol === null ? "refused" : tooSlow.vol.toExponential(2)}`);
+  if (tooSlow.vol !== null) fails++;
+}
+
+console.log("\npricing volatility follows a spike rather than lagging it:");
+{
+  // Volatility clusters, and a player picks their moment. A slow window that
+  // hasn't caught up yet is a window they can wait for, so the quoted estimate
+  // takes the larger of the slow and fast readings.
+  const calm = makeTicks(0.00005, 540, 12);
+  const spike = makeTicks(0.0003, 90, 12);
+  const shifted = spike.map((tk, i) => ({ t: calm[calm.length - 1].t + i * 80, p: tk.p }));
+  const series = [...calm, ...shifted];
+
+  const slow = measureVol(series);
+  const priced = measureVolForPricing(series);
+  const ok2 = priced.vol !== null && slow.vol !== null && priced.vol > slow.vol * 1.2;
+  console.log(
+    `  ${ok2 ? "PASS" : "FAIL"} quoted ${priced.vol?.toExponential(2)} vs slow-window ${slow.vol?.toExponential(2)}`
+  );
+  if (!ok2) fails++;
+}
 
 console.log(fails === 0 ? "\nALL PASS" : `\n${fails} FAILED`);
 process.exit(fails === 0 ? 0 : 1);

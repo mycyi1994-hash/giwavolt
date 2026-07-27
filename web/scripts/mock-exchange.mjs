@@ -40,6 +40,13 @@ createServer((req, res) => {
     res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ price: now?.p ?? null, vol: VOL }));
     return;
   }
+  // the oracle fetches spot separately from the kline series, because the
+  // quote centre has to be fresh even though the vol series can be cached
+  if (u.pathname === "/api/v3/ticker/price" || u.pathname === "/products/BTC-USD/ticker") {
+    const now = priceAt(Date.now());
+    res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ price: `${now?.p ?? 0}` }));
+    return;
+  }
   if (!u.pathname.startsWith("/api/v3/klines")) {
     res.writeHead(404).end("[]");
     return;

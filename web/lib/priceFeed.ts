@@ -23,7 +23,7 @@
 //     volatility against a real price series would silently break the house
 //     edge, so the two have to move together.
 
-import { measureVol, VOL_WINDOW_SEC, type Tick } from "@/lib/vol";
+import { measureVolForPricing, VOL_WINDOW_SEC, type Tick } from "@/lib/vol";
 
 export type { Tick };
 export type FeedStatus = "connecting" | "live" | "stale" | "down";
@@ -88,7 +88,7 @@ function recompute(force = false) {
   const now = Date.now();
   if (!force && now - lastVolAt < 1000) return;
   lastVolAt = now;
-  const { vol, samples } = measureVol(ticks);
+  const { vol, samples } = measureVolForPricing(ticks);
   state = { ...state, vol, volSamples: samples };
 }
 

@@ -50,7 +50,8 @@ let placed = null;
     ok(typeof placed.id === "string" && placed.id.length > 0, "response carries an id the client can track");
     ok(typeof placed.mult === "number" && placed.mult > 1, "response carries the server's own multiplier");
     ok(typeof placed.balance === "number", "response carries the authoritative balance");
-    ok(typeof placed.price === "number" && typeof placed.vol === "number", "response carries the quote it was priced on");
+    ok(!("price" in placed) && !("vol" in placed), "the server's quote is NOT echoed back");
+    ok(typeof placed.lo === "number" && typeof placed.hi === "number", "response carries the band the SERVER snapped to");
   }
 }
 
@@ -72,6 +73,7 @@ console.log("\nrejections the client must surface");
     ["off the column grid", { stake: 100, colT: nextColumn(20) + 7, lo, hi: lo + step }, 400],
     ["band far from the price", { stake: 100, colT: nextColumn(20), lo: price * 0.8, hi: price * 0.8 + step }, 409],
     ["client-shaped thin band", { stake: 100, colT: nextColumn(20), lo, hi: lo + step * 0.05 }, 409],
+    ["client-shaped wide band", { stake: 100, colT: nextColumn(20), lo, hi: lo + step * 12 }, 409],
   ];
   for (const [name, body, want] of cases) {
     const r = await place(body);

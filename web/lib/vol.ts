@@ -5,6 +5,20 @@
 export type Tick = { t: number; p: number };
 
 export const VOL_WINDOW_SEC = 600; // rolling window the estimate is measured over
+// A second, much shorter window. Volatility clusters: after a jump, the next
+// ten seconds routinely run several times the trailing ten-minute average. A
+// player watching the same public feed sees that before we do, and the grid's
+// tail cells are exponentially sensitive to an under-estimate — so pricing off
+// the slow window alone is an invitation to bet only when it is stale.
+export const VOL_SHORT_SEC = 90;
+
+// Realized-volatility guard rails, per √second. BTC typically sits near 1e-4.
+// Outside these the estimate is not something to quote against: below, the
+// series is too quiet to measure; above, we are almost certainly looking at bad
+// data. Both cases REFUSE rather than clamp — a clamped estimate in a genuinely
+// fast market is a systematic under-price exactly when it costs the most.
+export const VOL_MIN = 0.00002;
+export const VOL_MAX = 0.0008;
 const VOL_FINE_SEC = 1; // fast sampling grid
 const VOL_COARSE_SEC = 5; // slow grid, used to subtract microstructure noise
 const VOL_MIN_SAMPLES = 40; // fine-grid returns needed before we'll quote odds
@@ -70,9 +84,9 @@ function realizedVariance(src: Tick[], gridSec: number): { v: number; n: number 
  * the subtraction is mostly sampling error. Rather than quote odds off that, we
  * return null and the game stops taking bets until the measurement is sound.
  */
-export function measureVol(src: Tick[]): { vol: number | null; samples: number } {
+export function measureVol(src: Tick[], windowSec = VOL_WINDOW_SEC): { vol: number | null; samples: number } {
   if (src.length < 2) return { vol: null, samples: 0 };
-  const cutoff = src[src.length - 1].t - VOL_WINDOW_SEC * 1000;
+  const cutoff = src[src.length - 1].t - windowSec * 1000;
   const win = src.filter((tk) => tk.t >= cutoff);
   if (win.length < 2) return { vol: null, samples: 0 };
 
@@ -87,5 +101,27 @@ export function measureVol(src: Tick[]): { vol: number | null; samples: number }
   const variance = fine.v - c / VOL_FINE_SEC;
 
   if (!(variance > 0) || variance / fine.v < VOL_MIN_SNR) return { vol: null, samples: fine.n };
-  return { vol: Math.sqrt(variance), samples: fine.n };
+
+  const vol = Math.sqrt(variance);
+  if (vol < VOL_MIN || vol > VOL_MAX) return { vol: null, samples: fine.n };
+  return { vol, samples: fine.n };
+}
+
+/**
+ * The volatility to actually quote odds with.
+ *
+ * Takes the larger of the slow and fast estimates. The asymmetry is deliberate:
+ * over-estimating volatility costs the house a little edge, while
+ * under-estimating it prices the grid's far cells far too generously — and a
+ * player can choose *when* to bet, so any window that lags a volatility spike
+ * is a window they can wait for. Erring upward removes that option.
+ */
+export function measureVolForPricing(src: Tick[]): { vol: number | null; samples: number } {
+  const slow = measureVol(src, VOL_WINDOW_SEC);
+  if (slow.vol === null) return slow;
+  const fast = measureVol(src, VOL_SHORT_SEC);
+  const vol = fast.vol === null ? slow.vol : Math.max(slow.vol, fast.vol);
+  // The blend can exceed the ceiling even when both inputs sat inside it.
+  if (vol > VOL_MAX) return { vol: null, samples: slow.samples };
+  return { vol, samples: slow.samples };
 }

@@ -9,8 +9,8 @@ on-chain custody, server-authoritative (anti-cheat) settlement.
 - **Custody:** on-chain **GameVault** contract (auditable, funds not in a personal
   wallet). Deposits/withdrawals are on-chain; play is off-chain.
 - **Settlement:** **server-authoritative** — the server decides outcomes, so the
-  browser can't fake wins. Fairness is verifiable: **price oracle** for Tap
-  (done), **provably-fair commit-reveal** RNG for Death (still client-side).
+  browser can't fake wins. Fairness is verifiable both ways: a **price oracle**
+  for Tap, and **provably-fair commit-reveal** for Death.
   > Tap: the browser proposes a cell (settlement time + price band) and nothing
   > else. `/api/game/tap/place` prices it from the server's own market read and
   > debits the stake atomically; `/api/game/tap/settle` resolves it against the
@@ -54,11 +54,13 @@ Giwa Sepolia: TestKRW (tKRW) + GameVault
 - **P1 — DB + server-authoritative engine:** Supabase schema (users, balances,
   bets, fair-seeds, withdraw-nonces). Move the ledger off the JSON file. Each bet
   is created + resolved server-side; client only animates.
-- **P2 — Provably-fair + oracle:** ✅ for Tap — `web/lib/server/oracle.ts` +
+- **P2 — Provably-fair + oracle:** ✅ done. Tap: `web/lib/server/oracle.ts` +
   `/api/game/tap/{place,settle}` price and resolve every REAL-mode position
   server-side against exchange-published bars, and `tap_bets` records the quote
-  each bet was priced on so a payout can be re-derived. Still open: commit-reveal
-  seeds for Death, which remains client-side.
+  each bet was priced on so a payout can be re-derived. Death:
+  `web/lib/server/{prng,death}.ts` + `/api/game/death/*` deal the board from a
+  seed committed to before the first tap, and the skull positions never reach
+  the browser until the round ends.
 - **P3 — Deposit/withdraw wiring:** deposit watcher (events → credit); withdraw
   endpoint signs a voucher and relays the tx; frontend deposit/withdraw UI.
 - **P4 — Deploy:** Vercel + Supabase env, operator key as a server secret,

@@ -34,24 +34,33 @@ export function firstPickWinPct(bombs: number, total: number): number {
   return total > 0 ? ((total - bombs) / total) * 100 : 0;
 }
 
-function sample(pool: number[], n: number): number[] {
+function sample(pool: number[], n: number, rng: () => number): number[] {
   const a = pool.slice();
   for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = Math.floor(rng() * (i + 1));
     [a[i], a[j]] = [a[j], a[i]];
   }
   return a.slice(0, n);
 }
 
-export function newBoard(mode: Mode, difficulty: Difficulty = "medium"): DeathSession {
+/**
+ * Deal a board.
+ *
+ * `rng` defaults to Math.random for DEMO play. REAL rounds pass the round's
+ * committed seed stream instead, so the board is fixed before the first tap and
+ * can be re-derived from the published seed afterwards. The result carries
+ * `bombsIdx`, which is exactly the thing a REAL-mode client must never see —
+ * the server strips it before sending the board to the browser.
+ */
+export function newBoard(mode: Mode, difficulty: Difficulty = "medium", rng: () => number = Math.random): DeathSession {
   const cfg = DIFFICULTIES[difficulty];
   const dim = cfg.dim;
-  const mask = generateShapeMask(dim);
+  const mask = generateShapeMask(dim, rng);
   const inPlay: number[] = [];
   mask.forEach((on, i) => on && inPlay.push(i));
   const total = inPlay.length;
   const bombs = Math.max(1, Math.min(total - 1, Math.round(cfg.density * total)));
-  const bombsIdx = sample(inPlay, bombs);
+  const bombsIdx = sample(inPlay, bombs, rng);
 
   const tiles: DeathTile[] = mask.map((on) => (on ? "hidden" : "void"));
   return { mode, difficulty, dim, stake: 0, bombs, bombsIdx, tiles, picks: 0, multiplier: 1, status: "idle", cashout: 0 };

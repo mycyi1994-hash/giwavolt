@@ -2,7 +2,8 @@ import { reqAddress, reqAmount, readBody, json, err, rateLimit } from "@/lib/ser
 import { ensureAccount, debit } from "@/lib/server/ledger";
 import { getSql } from "@/lib/server/db";
 import { quote } from "@/lib/server/oracle";
-import { cellMultiplier, bandStep } from "@/lib/grid";
+import { cellMultiplier, bandStep, snapToBand } from "@/lib/grid";
+import { MAX_STAKE } from "@/lib/limits";
 import {
   isColumnTime,
   MIN_BET_HORIZON_SEC,
@@ -28,6 +29,7 @@ export async function POST(req: Request) {
   const stake = reqAmount(body?.stake);
   if (!address) return err("valid address required");
   if (stake === null) return err("stake must be positive");
+  if (stake > MAX_STAKE) return err("stake exceeds the table limit");
   if (!rateLimit(`tap:place:${address.toLowerCase()}`, 240, 60_000)) return err("too many requests", 429);
 
   const colT = body?.colT;
@@ -38,22 +40,38 @@ export async function POST(req: Request) {
     return err("bad price band");
   }
 
-  const h = (colT - Date.now()) / 1000;
-  if (h < MIN_BET_HORIZON_SEC) return err("column is inside the locked zone", 409);
-  if (h > MAX_BET_HORIZON_SEC) return err("column is too far out");
+  if ((colT - Date.now()) / 1000 > MAX_BET_HORIZON_SEC) return err("column is too far out");
 
   // The server's own price and volatility. No quote, no bet — we do not fall
   // back to a default, because a wrong volatility is a wrong payout.
   const q = await quote();
   if (!q) return err("price feed unavailable — betting paused", 503);
 
+  // Measure the horizon from the quote's own timestamp, not from now. The two
+  // differ by the fetch latency, and pricing a longer window than the model was
+  // handed would quietly understate the volatility the bet is exposed to.
+  const h = (colT - q.at) / 1000;
+  if (h < MIN_BET_HORIZON_SEC) return err("column is inside the locked zone", 409);
+
   const step = bandStep(q.price, q.vol);
+  // Width is only a sanity check that the client is drawing the same grid we
+  // are; the band it actually gets is ours.
   const widthRatio = (hi - lo) / step;
   if (widthRatio < BAND_WIDTH_MIN_RATIO || widthRatio > BAND_WIDTH_MAX_RATIO) {
     return err("band does not match the current grid — refresh and retry", 409);
   }
 
-  const mult = cellMultiplier(lo - q.price, hi - q.price, h, q.price, q.vol);
+  // Snap to the server's lattice. The client names which cell it wants by
+  // pointing at it; it does not get to describe one. An arbitrary band could be
+  // solved for the position the model prices worst, and the tails are exactly
+  // where a volatility error is most expensive.
+  const cell = snapToBand((lo + hi) / 2, q.price, step);
+
+  // The quote is a moment old by the time it is used. Charging the model for
+  // that extra window means a stale centre cannot be arbitraged against a
+  // player watching a faster feed than ours.
+  const hEff = h + q.ageMs / 1000;
+  const mult = cellMultiplier(cell.lo - q.price, cell.hi - q.price, hEff, q.price, q.vol);
   if (mult <= 0) return err("cell is not offered at the current volatility", 409);
 
   await ensureAccount(address);
@@ -66,19 +84,11 @@ export async function POST(req: Request) {
 
   const rows = await db`
     insert into tap_bets (address, stake, mult, band_lo, band_hi, col_t, quote_price, quote_vol, quote_source)
-    values (${address.toLowerCase()}, ${stake}, ${mult}, ${lo}, ${hi}, ${colT}, ${q.price}, ${q.vol}, ${q.source})
+    values (${address.toLowerCase()}, ${stake}, ${mult}, ${cell.lo}, ${cell.hi}, ${colT}, ${q.price}, ${q.vol}, ${q.source})
     returning id`;
 
-  return json({
-    ok: true,
-    id: String(rows[0].id),
-    mult,
-    colT,
-    lo,
-    hi,
-    price: q.price,
-    vol: q.vol,
-    source: q.source,
-    balance,
-  });
+  // The quote itself (price, volatility, venue) is stored for audit but not
+  // returned: echoing it hands a caller a free measurement of how far behind
+  // the market this server is, which is precisely what a latency play needs.
+  return json({ ok: true, id: String(rows[0].id), mult, colT, lo: cell.lo, hi: cell.hi, balance });
 }

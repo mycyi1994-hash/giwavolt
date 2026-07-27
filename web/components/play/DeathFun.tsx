@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Skull, Shuffle, Hand, Gem } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useAccount } from "wagmi";
+import { Skull, Shuffle, Hand, Gem, ShieldCheck } from "lucide-react";
 import { usePlay } from "./PlayProvider";
 import ModeToggle from "./ModeToggle";
 import AnimatedNumber from "@/components/ui/AnimatedNumber";
@@ -14,15 +15,67 @@ import type { Difficulty } from "@/lib/types";
 import { krw, amt } from "@/lib/money";
 import { useGameStake } from "@/lib/useGameStake";
 import GameBalance from "./GameBalance";
+import type { DeathTile } from "@/lib/types";
+
+type ServerRound = {
+  id: string;
+  difficulty: Difficulty;
+  dim: number;
+  stake: number;
+  bombs: number;
+  picks: number;
+  multiplier: number;
+  status: "playing" | "busted" | "stopped";
+  cashout: number;
+  tiles: DeathTile[];
+  serverSeedHash: string;
+  clientSeed: string;
+  nonce: number;
+  serverSeed?: string;
+};
+
+type FairInfo = { hash: string; seed?: string; clientSeed: string; nonce: number };
 
 export default function DeathFun() {
-  const { balance, adjust, death, setDeath } = usePlay();
+  const { balance, adjust, setBalance, death, setDeath } = usePlay();
+  const { address } = useAccount();
   const { mode, real, stake, setStake, presets } = useGameStake();
   const toast = useToast();
   const [custom, setCustom] = useState("");
   const [diff, setDiff] = useState<Difficulty>("medium");
   const [shake, setShake] = useState(false);
   const [burst, setBurst] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [fair, setFair] = useState<FairInfo | null>(null);
+
+  // REAL rounds live on the server. The board here is only ever what the server
+  // chose to show us: an unopened tile is "hidden" because the server said so,
+  // not because this component is politely not looking.
+  const roundId = useRef<string | null>(null);
+  const addrRef = useRef(address);
+  addrRef.current = address;
+
+  const applyRound = useCallback(
+    (r: ServerRound) => {
+      roundId.current = r.status === "playing" ? r.id : null;
+      setFair({ hash: r.serverSeedHash, seed: r.serverSeed, clientSeed: r.clientSeed, nonce: r.nonce });
+      setDeath({
+        mode: "real",
+        difficulty: r.difficulty,
+        dim: r.dim,
+        stake: r.stake,
+        bombs: r.bombs,
+        bombsIdx: [], // the server keeps these until the round is over
+        tiles: r.tiles,
+        picks: r.picks,
+        multiplier: r.multiplier,
+        status: r.status === "playing" ? "playing" : r.status === "busted" ? "busted" : "stopped",
+        cashout: r.cashout,
+      });
+      setDiff(r.difficulty);
+    },
+    [setDeath]
+  );
 
   useEffect(() => {
     if (!death) setDeath(newBoard(mode, diff));
@@ -33,6 +86,22 @@ export default function DeathFun() {
     if (death && death.status !== "playing" && death.mode !== mode) setDeath(newBoard(mode, diff));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
+
+  // Pick up a round left open by a closed tab — the stake is already spent, so
+  // abandoning it would just be losing money to a page reload.
+  useEffect(() => {
+    if (!real || !address) return;
+    let cancelled = false;
+    fetch(`/api/game/death/round?address=${address}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (!cancelled && d?.ok && d.round && d.round.status === "playing") applyRound(d.round);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [real, address, applyRound]);
 
   if (!death) return null;
 
@@ -48,45 +117,118 @@ export default function DeathFun() {
   const tilePx = Math.max(16, Math.min(64, Math.floor((BOARD_MAX - (death.dim - 1) * gap) / death.dim)));
   const animate = death.dim <= 13;
 
-  const start = () => {
-    if (death.status !== "idle") return;
+  const api = async (path: string, body: unknown) => {
+    const r = await fetch(`/api/game/death/${path}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ address: addrRef.current, ...(body as object) }),
+    });
+    return { ok: r.ok, data: await r.json() };
+  };
+
+  const bust = (r: ServerRound) => {
+    sfx.skull();
+    setShake(true);
+    setTimeout(() => setShake(false), 400);
+    applyRound(r);
+    toast.push("skull", `BUSTED −${amt(true, r.stake)}`, "hit a skull");
+  };
+
+  const start = async () => {
+    if (death.status !== "idle" || busy) return;
     if (stake <= 0 || balance[mode] < stake) return;
     sfx.place();
-    adjust(mode, -stake);
-    setDeath({
-      ...death,
-      stake,
-      tiles: death.tiles.map((t) => (t === "void" ? "void" : "hidden")), // keep the board shape
-      picks: 0,
-      multiplier: 1,
-      status: "playing",
-      cashout: 0,
-    });
+
+    if (!real) {
+      adjust(mode, -stake);
+      setDeath({
+        ...death,
+        stake,
+        tiles: death.tiles.map((t) => (t === "void" ? "void" : "hidden")), // keep the board shape
+        picks: 0,
+        multiplier: 1,
+        status: "playing",
+        cashout: 0,
+      });
+      return;
+    }
+
+    setBusy(true);
+    // The client seed lets the player co-author the board's randomness, so the
+    // server can't have pre-computed an unlucky one for them.
+    const clientSeed = Math.random().toString(36).slice(2, 18);
+    const { ok, data } = await api("start", { difficulty: diff, stake, clientSeed });
+    setBusy(false);
+    if (!ok || !data?.ok) {
+      toast.push("info", "COULD NOT DEAL", typeof data?.error === "string" ? data.error : "server declined");
+      return;
+    }
+    if (typeof data.balance === "number") setBalance("real", data.balance);
+    applyRound(data.round);
   };
-  const reveal = (i: number) => {
-    if (!playing || death.tiles[i] !== "hidden") return;
-    if (death.bombsIdx.includes(i)) {
-      sfx.skull();
-      setShake(true);
-      setTimeout(() => setShake(false), 400);
-      const tiles = revealAll({ ...death, tiles: death.tiles.map((t, k) => (k === i ? "skull" : t)) });
-      setDeath({ ...death, tiles, status: "busted", cashout: 0 });
-      toast.push("skull", `BUSTED −${amt(death.mode === "real", death.stake)}`, "hit a skull");
-    } else {
+
+  const reveal = async (i: number) => {
+    if (!playing || death.tiles[i] !== "hidden" || busy) return;
+
+    if (!real) {
+      if (death.bombsIdx.includes(i)) {
+        sfx.skull();
+        setShake(true);
+        setTimeout(() => setShake(false), 400);
+        const tiles = revealAll({ ...death, tiles: death.tiles.map((t, k) => (k === i ? "skull" : t)) });
+        setDeath({ ...death, tiles, status: "busted", cashout: 0 });
+        toast.push("skull", `BUSTED −${amt(false, death.stake)}`, "hit a skull");
+      } else {
+        sfx.reveal();
+        const tiles = death.tiles.slice();
+        tiles[i] = "safe";
+        const picks = death.picks + 1;
+        setDeath({ ...death, tiles, picks, multiplier: multiplierAfter(picks, death.bombs, total) });
+      }
+      return;
+    }
+
+    if (!roundId.current) return;
+    setBusy(true);
+    const { ok, data } = await api("reveal", { roundId: roundId.current, index: i });
+    setBusy(false);
+    if (!ok || !data?.ok) {
+      toast.push("info", "TILE NOT OPENED", typeof data?.error === "string" ? data.error : "server declined");
+      return;
+    }
+    if (data.hit === "skull") bust(data.round);
+    else {
       sfx.reveal();
-      const tiles = death.tiles.slice();
-      tiles[i] = "safe";
-      const picks = death.picks + 1;
-      setDeath({ ...death, tiles, picks, multiplier: multiplierAfter(picks, death.bombs, total) });
+      applyRound(data.round);
     }
   };
-  const stop = () => {
-    if (!playing) return;
-    const cashout = +(death.stake * death.multiplier).toFixed(2);
+
+  const stop = async () => {
+    if (!playing || busy) return;
+
+    if (!real) {
+      const cashout = +(death.stake * death.multiplier).toFixed(2);
+      sfx.cashout();
+      adjust(death.mode, cashout);
+      setDeath({ ...death, tiles: revealAll(death), status: "stopped", cashout });
+      toast.push("cash", `CASHED OUT +${amt(false, cashout)}`, `${death.multiplier.toFixed(2)}× · ${death.picks} safe`);
+      setBurst(true);
+      setTimeout(() => setBurst(false), 1000);
+      return;
+    }
+
+    if (!roundId.current) return;
+    setBusy(true);
+    const { ok, data } = await api("cashout", { roundId: roundId.current });
+    setBusy(false);
+    if (!ok || !data?.ok) {
+      toast.push("info", "CASH OUT FAILED", typeof data?.error === "string" ? data.error : "server declined");
+      return;
+    }
     sfx.cashout();
-    adjust(death.mode, cashout);
-    setDeath({ ...death, tiles: revealAll(death), status: "stopped", cashout });
-    toast.push("cash", `CASHED OUT +${amt(death.mode === "real", cashout)}`, `${death.multiplier.toFixed(2)}× · ${death.picks} safe`);
+    if (typeof data.balance === "number") setBalance("real", data.balance);
+    applyRound(data.round);
+    toast.push("cash", `CASHED OUT +${amt(true, data.payout)}`, `${data.round.multiplier.toFixed(2)}× · ${data.round.picks} safe`);
     setBurst(true);
     setTimeout(() => setBurst(false), 1000);
   };
@@ -209,6 +351,8 @@ export default function DeathFun() {
           </button>
         )}
 
+        {real && fair && <FairPanel fair={fair} />}
+
         <div className="mt-auto">
           <QuoteTicker />
         </div>
@@ -297,6 +441,47 @@ function Tile({
         <span className="tabular absolute inset-0 grid place-items-center font-mono text-[11px] font-bold text-cyan opacity-0 transition group-hover:opacity-100">{preview}</span>
       )}
     </button>
+  );
+}
+
+// The commitment, and then the proof. Before the round only the hash is known,
+// so the player can see the board was fixed in advance without seeing it. After
+// it ends the seed appears, and re-deriving the board from it is what turns
+// "trust us" into something checkable.
+function FairPanel({ fair }: { fair: FairInfo }) {
+  const short = (s: string) => (s.length > 20 ? `${s.slice(0, 10)}…${s.slice(-8)}` : s);
+  return (
+    <div className="clip border border-line bg-ink-2 p-2.5">
+      <div className="mb-1.5 flex items-center gap-1.5 font-mono text-[9px] tracking-[0.2em] text-faint">
+        <ShieldCheck size={11} className={fair.seed ? "text-lime" : "text-cyan"} />
+        {fair.seed ? "PROVABLY FAIR · REVEALED" : "PROVABLY FAIR · COMMITTED"}
+      </div>
+      <dl className="space-y-1 font-mono text-[9px] leading-relaxed">
+        <div className="flex justify-between gap-2">
+          <dt className="text-faint">hash</dt>
+          <dd className="tabular truncate text-muted" title={fair.hash}>{short(fair.hash)}</dd>
+        </div>
+        <div className="flex justify-between gap-2">
+          <dt className="text-faint">client</dt>
+          <dd className="tabular truncate text-muted" title={fair.clientSeed}>{fair.clientSeed || "—"}</dd>
+        </div>
+        <div className="flex justify-between gap-2">
+          <dt className="text-faint">nonce</dt>
+          <dd className="tabular text-muted">{fair.nonce}</dd>
+        </div>
+        {fair.seed && (
+          <div className="flex justify-between gap-2">
+            <dt className="text-lime">seed</dt>
+            <dd className="tabular truncate text-lime" title={fair.seed}>{short(fair.seed)}</dd>
+          </div>
+        )}
+      </dl>
+      <p className="mt-1.5 font-mono text-[8px] leading-relaxed text-faint">
+        {fair.seed
+          ? "sha256(seed) matches the hash committed before the deal."
+          : "The board is already fixed. The seed is published when the round ends."}
+      </p>
+    </div>
   );
 }
 

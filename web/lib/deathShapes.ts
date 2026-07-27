@@ -39,22 +39,29 @@ const SHAPES: ShapeFn[] = [
   (u, v, p) => Math.abs(u) <= p.t * 2.2 || Math.abs(v) <= p.t * 2.2, // plus / cross
 ];
 
-export function generateShapeMask(dim: number): boolean[] {
+/**
+ * `rng` is injectable so the same generator serves both modes: DEMO passes
+ * nothing and gets Math.random, while REAL mode passes the round's seeded
+ * stream (lib/server/prng.ts). That means a published server seed regenerates
+ * the exact board a player was dealt — the shape has to be reproducible too,
+ * not just the skull placement, or the proof is incomplete.
+ */
+export function generateShapeMask(dim: number, rng: () => number = Math.random): boolean[] {
   const N = dim * dim;
   if (dim <= 4) return new Array(N).fill(true); // too small for shapes
 
   for (let attempt = 0; attempt < 10; attempt++) {
-    const rot = Math.random() * Math.PI;
+    const rot = rng() * Math.PI;
     const cos = Math.cos(rot);
     const sin = Math.sin(rot);
-    const fn = SHAPES[Math.floor(Math.random() * SHAPES.length)];
+    const fn = SHAPES[Math.floor(rng() * SHAPES.length)];
     const p: P = {
-      R: 0.85 + Math.random() * 0.35,
-      R0: 0.45 + Math.random() * 0.35,
-      w: 0.28 + Math.random() * 0.22,
-      A: 0.2 + Math.random() * 0.4,
-      k: 3 + Math.floor(Math.random() * 6),
-      t: 0.16 + Math.random() * 0.18,
+      R: 0.85 + rng() * 0.35,
+      R0: 0.45 + rng() * 0.35,
+      w: 0.28 + rng() * 0.22,
+      A: 0.2 + rng() * 0.4,
+      k: 3 + Math.floor(rng() * 6),
+      t: 0.16 + rng() * 0.18,
     };
     const mask = new Array<boolean>(N).fill(false);
     let count = 0;

@@ -76,3 +76,48 @@ create table if not exists tap_bets (
   settled_at   timestamptz
 );
 create index if not exists tap_bets_open_idx on tap_bets(address, status, col_t);
+
+-- Death Fun rounds. Server-authoritative and provably fair: the board is
+-- generated from server_seed before the first tap, and only sha256(server_seed)
+-- is published up front. bombs_idx is never sent to the browser while the round
+-- is live — that column IS the game's secret. On bust or cash-out the seed and
+-- the skull positions are released so the player can re-derive the exact board
+-- (see lib/server/prng.ts).
+create table if not exists death_rounds (
+  id           bigserial primary key,
+  address      text not null,
+  difficulty   text not null,
+  dim          int not null,
+  stake        numeric(30,2) not null,
+  bombs        int not null,
+  bombs_idx    jsonb not null,          -- secret until status <> 'playing'
+  mask         jsonb not null,          -- board shape; public from the start
+  revealed     jsonb not null default '[]'::jsonb,  -- indices the player opened
+  picks        int not null default 0,
+  multiplier   numeric(12,4) not null default 1,
+  status       text not null default 'playing',     -- playing | busted | stopped
+  cashout      numeric(30,2) not null default 0,
+  server_seed  text not null,           -- released only once the round ends
+  server_seed_hash text not null,
+  client_seed  text not null default '',
+  nonce        bigint not null default 0,
+  created_at   timestamptz not null default now(),
+  settled_at   timestamptz
+);
+create index if not exists death_rounds_open_idx on death_rounds(address, status);
+
+-- Bars the oracle has already seen, keyed by the bar's close time (epoch ms).
+-- Settlement reads this before reaching for an exchange, so the outcome of a
+-- bet does not depend on that exchange still answering at the moment a player
+-- chooses to ask — an unfetchable settlement price is worth money to them.
+create table if not exists price_bars (
+  ts          bigint primary key,
+  price       numeric(30,8) not null,
+  source      text not null,
+  recorded_at timestamptz not null default now()
+);
+
+-- Settlement attempts are recorded so a void is a considered outcome rather
+-- than the result of one unlucky fetch at a moment of the player's choosing.
+alter table tap_bets add column if not exists settle_attempts int not null default 0;
+alter table tap_bets add column if not exists first_attempt_at timestamptz;

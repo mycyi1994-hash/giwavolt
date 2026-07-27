@@ -21,15 +21,22 @@
 // more than their true odds (a negative edge for the house), too low and
 // nothing but the centre band is ever offered.
 
+import { VOL_MIN, VOL_MAX } from "./vol";
+
 export const HOUSE_EDGE = 0.07; // 7%
-export const MAX_MULT = 100; // bigger payouts — far cells reach up to 100×
+// Ceiling on the payout of any single cell.
+//
+// A cell's multiplier is the reciprocal of its probability, so the biggest
+// payouts live furthest into the tail — and tail probabilities are
+// *exponentially* sensitive to the volatility used to compute them. At 100× the
+// cell sits around 3σ out, where a 25% volatility error swings its true odds by
+// several times. That is the whole model risk of the game concentrated in the
+// cells a player would naturally hunt for, so the ceiling is set where a
+// plausible mis-estimate can still only dent the edge rather than invert it.
+export const MAX_MULT = 50;
 export const MIN_MULT = 1.1;
 
-// Realized-volatility guard rails, per √second. BTC typically sits near 1e-4;
-// the bounds exist so a thin-liquidity burst or a stalled feed can't produce a
-// nonsense grid — they are not a tuning knob for the odds.
-export const VOL_MIN = 0.00002;
-export const VOL_MAX = 0.0008;
+export { VOL_MIN, VOL_MAX };
 
 // Band height is expressed as a fraction of one standard deviation at a
 // reference horizon, so the grid keeps a constant *shape* (how many rows are
@@ -47,6 +54,25 @@ export function clampVol(vol: number): number {
 /** Height of one grid band in price units, sized to current realized vol. */
 export function bandStep(price: number, vol: number): number {
   return price * clampVol(vol) * Math.sqrt(H_REF_SEC) * BAND_SIGMA_FRACTION;
+}
+
+/**
+ * The grid's bands are absolute price levels on a lattice anchored to the
+ * current price. Everything that prices or settles a bet goes through here, so
+ * a cell is always one of the server's own bands — never a shape a caller
+ * described. A caller who could name an arbitrary band could solve for the one
+ * the model prices worst; naming a *lattice index* leaves nothing to solve.
+ */
+export function gridAnchor(price: number, step: number): number {
+  return Math.round(price / step) * step;
+}
+
+/** Snap an arbitrary price to the band of the lattice that contains it. */
+export function snapToBand(target: number, price: number, step: number): { lo: number; hi: number; index: number } {
+  const anchor = gridAnchor(price, step);
+  const index = Math.floor((target - anchor) / step);
+  const lo = anchor + index * step;
+  return { lo, hi: lo + step, index };
 }
 
 // erf via Abramowitz & Stegun 7.1.26

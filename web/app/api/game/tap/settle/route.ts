@@ -2,7 +2,7 @@ import { reqAddress, readBody, json, err, rateLimit } from "@/lib/server/api";
 import { credit, getBalance } from "@/lib/server/ledger";
 import { getSql } from "@/lib/server/db";
 import { priceAt } from "@/lib/server/oracle";
-import { VOID_UNRESOLVED_AFTER_MS } from "@/lib/tap";
+import { VOID_MIN_AGE_MS, VOID_MIN_ATTEMPTS, VOID_MIN_ATTEMPT_SPAN_MS } from "@/lib/tap";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,6 +14,8 @@ type Row = {
   band_lo: string;
   band_hi: string;
   col_t: string;
+  settle_attempts: number;
+  first_attempt_at: string | null;
 };
 
 // Settle every Tap position that has come due.
@@ -37,7 +39,7 @@ export async function POST(req: Request) {
   const now = Date.now();
 
   const due = (await db`
-    select id, stake, mult, band_lo, band_hi, col_t
+    select id, stake, mult, band_lo, band_hi, col_t, settle_attempts, first_attempt_at
       from tap_bets
      where address=${a} and status='live' and col_t <= ${now}
      order by col_t asc
@@ -55,7 +57,26 @@ export async function POST(req: Request) {
     const fill = await priceAt(colT);
 
     if (!fill) {
-      if (now - colT < VOID_UNRESOLVED_AFTER_MS) continue; // transient — try again next poll
+      // Record the failure. A void refunds the stake, and the player chooses
+      // when to ask, so it must take sustained failure rather than one badly
+      // timed fetch — otherwise "retry until the oracle blinks" turns a losing
+      // bet into a refund.
+      const tracked = (await db`
+        update tap_bets
+           set settle_attempts = settle_attempts + 1,
+               first_attempt_at = coalesce(first_attempt_at, now())
+         where id=${row.id} and status='live'
+        returning settle_attempts, first_attempt_at`) as unknown as Row[];
+      if (!tracked.length) continue;
+
+      const attempts = Number(tracked[0].settle_attempts);
+      const firstAt = tracked[0].first_attempt_at ? new Date(tracked[0].first_attempt_at).getTime() : now;
+      const ripe =
+        now - colT >= VOID_MIN_AGE_MS &&
+        attempts >= VOID_MIN_ATTEMPTS &&
+        now - firstAt >= VOID_MIN_ATTEMPT_SPAN_MS;
+      if (!ripe) continue;
+
       // Claim the row before refunding so a concurrent request can't refund twice.
       const claimed = await db`
         update tap_bets set status='void', settled_at=now(), payout=${stake}

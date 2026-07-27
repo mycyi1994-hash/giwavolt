@@ -27,11 +27,19 @@ export const BAND_WIDTH_MAX_RATIO = 2.5;
 export const MAX_OPEN_BETS = 60;
 
 /**
- * A due bet whose settlement price can't be fetched is voided after this long.
- * Short enough that money isn't held hostage by an exchange outage, long enough
- * to ride out a transient fetch failure.
+ * Conditions under which a due bet whose settlement price cannot be fetched is
+ * finally voided and refunded.
+ *
+ * A void is a refund, and settlement is triggered by the player's own client —
+ * so a cheap void is a free option: settle the winners, and retry the losers
+ * until a fetch happens to fail. Two things make that uneconomic. Bars the
+ * oracle has already seen are persisted (lib/server/oracle.ts), so the price
+ * usually can't go missing at all; and when it genuinely can, the void needs
+ * repeated failures spread over real time rather than one bad moment.
  */
-export const VOID_UNRESOLVED_AFTER_MS = 45_000;
+export const VOID_MIN_AGE_MS = 10 * 60_000; // how long past due before voiding
+export const VOID_MIN_ATTEMPTS = 6; // failed settlement attempts required
+export const VOID_MIN_ATTEMPT_SPAN_MS = 5 * 60_000; // spread across at least this long
 
 export function isColumnTime(t: number): boolean {
   return Number.isInteger(t) && t > 0 && t % COL_INTERVAL_MS === 0;

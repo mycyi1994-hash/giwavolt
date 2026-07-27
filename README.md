@@ -75,6 +75,28 @@ own advantage is rejected — the requested height has to match the server's
 current grid. And when the settlement price can't be fetched, the bet is voided
 and the stake refunded rather than resolved on a guess.
 
+## Death Fun is server-authoritative too
+
+The board used to live in the browser — including `bombsIdx`, the skull
+positions. Anyone with devtools could read the answer key. REAL rounds are now
+dealt server-side and the skulls stay there:
+
+```
+POST /api/game/death/start     deals the board, debits the stake,
+                               publishes sha256(serverSeed)
+POST /api/game/death/reveal    looks up one tile; the answer was fixed at deal time
+POST /api/game/death/cashout    pays stake x the multiplier stored on the row
+GET  /api/game/death/round     resume a round left open by a closed tab
+```
+
+The board comes from a seeded stream — `HMAC(serverSeed, clientSeed:nonce:i)` —
+and the server commits to `sha256(serverSeed)` before the first tap, so it can't
+pick a board after seeing where you click. You supply a `clientSeed`, so it
+can't have pre-computed an unlucky one for you either. When the round ends the
+seed is published and replaying it re-derives the exact board — shape and skulls
+both. While the round is live, an unopened tile reads `hidden` in the API
+response whether or not it hides a skull.
+
 ## Verifying it
 
 ```bash
@@ -84,6 +106,7 @@ npm run verify:edge      # Monte-Carlo of the realised house edge across regimes
 # server-authoritative settlement, against a real Postgres:
 createdb volt && psql -d volt -f db/schema.sql
 DATABASE_URL=postgres://…/volt npm run verify:tap-api
+DATABASE_URL=postgres://…/volt npm run verify:death-api
 
 # and over real HTTP, against a running server:
 npm run mock:exchange 5399 &
@@ -92,8 +115,35 @@ npm run verify:tap-http
 ```
 
 `verify:tap-api` covers input validation, that outcomes match the published
-price, that concurrent settles pay exactly once, that an unfetchable price
-voids and refunds, and that the `txns` log reconciles with the balance.
+price, that concurrent settles pay exactly once, that a void takes sustained
+failure rather than one badly-timed fetch, and that the `txns` log reconciles
+with the balance. `verify:death-api` checks that no skull position is inferable
+from a live round's payload, that the published seed regenerates the exact
+board, that a round can't be re-rolled or touched by another address, and that
+concurrent cash-outs pay once.
+
+## Where the economic risk actually lives
+
+The grid pays the reciprocal of a probability, so its biggest multipliers sit
+furthest into the tail — and tail probabilities are *exponentially* sensitive to
+the volatility used to compute them. That makes a few things load-bearing:
+
+- **The client names a cell, it doesn't describe one.** `place` snaps whatever
+  band it's sent onto the server's own lattice. An arbitrary band could be
+  solved for the position the model prices worst.
+- **Volatility is refused, never clamped**, outside its guard rails, and pricing
+  takes the *larger* of a 10-minute and a 90-second estimate. Volatility
+  clusters, and a player chooses when to bet — any window that lags a spike is a
+  window they can wait for.
+- **`MAX_MULT` is 50, not 100.** That's where a plausible mis-estimate can still
+  only dent the edge instead of inverting it.
+- **The quote is fetched fresh per bet** and the horizon is measured from the
+  quote's own timestamp, with the quote's age charged to the model. A stale
+  centre is arbitrageable by anyone watching a faster feed — which is everyone.
+- **A void is not a free option.** It refunds the stake and the player triggers
+  settlement, so cheap voiding would mean "bank the winners, retry the losers
+  until the oracle blinks". Bars the oracle has seen are persisted to
+  `price_bars`, and voiding needs repeated failures spread over real time.
 
 ## Layout
 

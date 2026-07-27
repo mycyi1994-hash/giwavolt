@@ -57,6 +57,13 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const klines = rows.map((s) => [s.t - 999, String(s.p), String(s.p), String(s.p), String(s.p), "1", s.t, "0", 0, "0", "0", "0"]);
     return new Response(JSON.stringify(klines), { status: 200, headers: { "content-type": "application/json" } });
   }
+  if (url.includes("/api/v3/ticker/price") || url.includes("/products/BTC-USD/ticker")) {
+    const now = barAt(Date.now());
+    if (blackout && now && now.t >= blackout.from && now.t <= blackout.to) {
+      return new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
+    }
+    return new Response(JSON.stringify({ price: `${now?.p ?? 0}` }), { status: 200, headers: { "content-type": "application/json" } });
+  }
   if (url.includes("exchange.coinbase.com")) {
     return new Response("[]", { status: 200, headers: { "content-type": "application/json" } });
   }
@@ -108,8 +115,9 @@ console.log("1. the server prices the cell, not the client");
   ok(r.status === 200 && r.json.ok === true, "bet accepted", r.json.error ?? `mult ${r.json.mult?.toFixed(2)}×`);
   ok(typeof r.json.mult === "number" && r.json.mult > 1, "server returned its own multiplier");
   ok(r.json.balance === 999000, "stake debited atomically", `balance ${r.json.balance}`);
+  ok(!("price" in r.json) && !("vol" in r.json), "the quote is NOT echoed back (no free latency oracle)");
   const rows = await db`select quote_price, quote_vol from tap_bets where id=${r.json.id}`;
-  ok(rows.length === 1 && Math.abs(Number(rows[0].quote_price) - q.price) < 1, "quote stored for audit");
+  ok(rows.length === 1 && Number(rows[0].quote_price) > 0, "quote still stored server-side for audit");
 }
 
 console.log("\n2. inputs the client controls are validated");
@@ -122,6 +130,7 @@ console.log("\n2. inputs the client controls are validated");
     ["inverted band", { colT: nextColumn(20), lo: b.hi, hi: b.lo }, 400],
     ["hand-picked razor-thin band", { colT: nextColumn(20), lo: b.lo, hi: b.lo + step * 0.02 }, 409],
     ["hand-picked huge band", { colT: nextColumn(20), lo: b.lo, hi: b.lo + step * 40 }, 409],
+    ["band far below the market", { colT: nextColumn(20), lo: q.price * 0.9, hi: q.price * 0.9 + step }, 409],
     ["negative stake", { colT: nextColumn(20), ...b, stake: -5 }, 400],
   ];
   for (const [name, patch, want] of cases) {
@@ -194,19 +203,62 @@ console.log("\n5. settling twice does not pay twice");
   ok(bal1 - bal0 === 5000, "paid exactly once", `+${bal1 - bal0}`);
 }
 
-console.log("\n6. an unresolvable price voids and refunds rather than guessing");
+console.log("\n6. a void is not a free option the player can trigger on demand");
 {
+  // A void refunds the stake, and the *player* decides when settlement runs.
+  // If one failed fetch were enough, the play would be: bank the winners, and
+  // retry the losers until the oracle blinks. So a losing bet is held open
+  // through repeated failures instead of being handed back.
   const colT = Math.floor((Date.now() - 60_000) / COL_INTERVAL_MS) * COL_INTERVAL_MS;
-  blackout = { from: colT - 10_000, to: colT + 10_000 }; // exchange has no data there
+  blackout = { from: colT - 10_000, to: colT + 10_000 };
+  await db`delete from price_bars where ts >= ${colT - 10_000} and ts <= ${colT + 10_000}`;
+
   const lo = Math.floor(q.price / step) * step;
   const bet = await db`insert into tap_bets (address, stake, mult, band_lo, band_hi, col_t, quote_price, quote_vol, quote_source)
     values (${ADDR.toLowerCase()}, 1000, 5, ${lo}, ${lo + step}, ${colT}, ${q.price}, ${q.vol}, 'test') returning id`;
+  const id = String(bet[0].id);
   const before = Number((await db`select balance from accounts where address=${ADDR.toLowerCase()}`)[0].balance);
+
+  for (let i = 0; i < 8; i++) await post(settle, { address: ADDR });
+  const spam = Number((await db`select balance from accounts where address=${ADDR.toLowerCase()}`)[0].balance);
+  const st = (await db`select status, settle_attempts from tap_bets where id=${id}`)[0];
+  ok(st.status === "live", "hammering settle during an outage does NOT void the bet", `status ${st.status}`);
+  ok(spam === before, "no refund was extracted", `balance ${spam}`);
+  ok(Number(st.settle_attempts) >= 6, "the failed attempts were recorded", `${st.settle_attempts} attempts`);
+
+  console.log("   …and voids once the failure is genuinely sustained");
+  // age the bet past the void window and backdate the first attempt
+  const old = Date.now() - 20 * 60_000;
+  const oldCol = Math.floor(old / COL_INTERVAL_MS) * COL_INTERVAL_MS;
+  await db`update tap_bets set col_t=${oldCol}, first_attempt_at = now() - interval '10 minutes' where id=${id}`;
+  blackout = { from: oldCol - 10_000, to: oldCol + 10_000 };
+  await db`delete from price_bars where ts >= ${oldCol - 10_000} and ts <= ${oldCol + 10_000}`;
+
   const r = await post(settle, { address: ADDR });
   const after = Number((await db`select balance from accounts where address=${ADDR.toLowerCase()}`)[0].balance);
+  const s = r.json.settled.find((x: any) => x.id === id);
+  ok(s?.status === "void", "voided after sustained, spread-out failure", s ? `status ${s.status}` : "still open");
+  ok(after - before === 1000, "stake refunded in full, exactly once", `+${after - before}`);
+  blackout = null;
+}
+
+console.log("\n6b. a settlement price we already recorded survives an exchange outage");
+{
+  // The bars the oracle has seen are persisted, so a player cannot manufacture
+  // an unresolvable bet by pushing the exchange into rate-limiting.
+  const colT = Math.floor((Date.now() - 8_000) / COL_INTERVAL_MS) * COL_INTERVAL_MS;
+  const truth = barAt(colT)!;
+  await db`insert into price_bars (ts, price, source) values (${truth.t}, ${truth.p}, 'test')
+           on conflict (ts) do nothing`;
+  blackout = { from: colT - 60_000, to: colT + 60_000 }; // exchange refuses everything
+
+  const lo = Math.floor(truth.p / step) * step;
+  const bet = await db`insert into tap_bets (address, stake, mult, band_lo, band_hi, col_t, quote_price, quote_vol, quote_source)
+    values (${ADDR.toLowerCase()}, 1000, 5, ${lo}, ${lo + step}, ${colT}, ${q.price}, ${q.vol}, 'test') returning id`;
+  const r = await post(settle, { address: ADDR });
   const s = r.json.settled.find((x: any) => x.id === String(bet[0].id));
-  ok(s?.status === "void", "voided when the price could not be fetched", s ? `status ${s.status}` : "not settled");
-  ok(after - before === 1000, "stake refunded in full", `+${after - before}`);
+  ok(s?.status === "won", "settled from the stored bar with the exchange down", s ? `status ${s.status}` : "not settled");
+  ok(Math.abs(s?.settlePrice - truth.p) < 0.01, "and at the recorded price", `${s?.settlePrice}`);
   blackout = null;
 }
 
