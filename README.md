@@ -43,18 +43,57 @@ would go straight into the payouts. So the estimator samples on two grids and
 subtracts the noise term, and when too little signal survives the subtraction it
 reports nothing and the game stops quoting until the measurement is sound.
 
-Two scripts check this rather than asserting it:
-
-```bash
-npm run verify:vol     # estimator recovers a known volatility; refuses when it can't
-npm run verify:edge    # Monte-Carlo of the realised house edge across regimes
-```
-
 At a realistic BTC spread the realised edge lands at **6.7–6.8%** against a 7%
 target, with median volatility error near 2%. Note the honest caveat that
 follows: the edge is exact *given* the volatility estimate, and a real estimate
 carries error — the old simulated chart could claim exactness only because it
 generated the price with the very volatility it priced against.
+
+## REAL mode is settled by the server
+
+In DEMO mode the browser settles its own bets; there's no money to protect. In
+REAL mode it doesn't get a vote. A tap sends only a **settlement time and a
+price band** — the server does the rest:
+
+```
+POST /api/game/tap/place    validates the cell against its own grid,
+                            prices it from its own market read,
+                            debits the stake atomically, stores the quote
+POST /api/game/tap/settle   resolves each due bet against the exchange's
+                            PUBLISHED 1-second bar at that instant
+```
+
+Settlement deliberately does not use a price this server remembers. It asks the
+exchange for the bar covering the bet's settlement second, so **a player can
+re-query the same public endpoint and check the result** — and a serverless
+function has no memory to trust anyway, since instances come and go between a
+bet and its settlement. `tap_bets` keeps the price and volatility each bet was
+quoted on, so any payout can be re-derived after the fact.
+
+A multiplier the client reports is never used. A band the client shapes to its
+own advantage is rejected — the requested height has to match the server's
+current grid. And when the settlement price can't be fetched, the bet is voided
+and the stake refunded rather than resolved on a guess.
+
+## Verifying it
+
+```bash
+npm run verify:vol       # estimator recovers a known volatility; refuses when it can't
+npm run verify:edge      # Monte-Carlo of the realised house edge across regimes
+
+# server-authoritative settlement, against a real Postgres:
+createdb volt && psql -d volt -f db/schema.sql
+DATABASE_URL=postgres://…/volt npm run verify:tap-api
+
+# and over real HTTP, against a running server:
+npm run mock:exchange 5399 &
+DATABASE_URL=… BINANCE_API_BASE=http://127.0.0.1:5399 npm start &
+npm run verify:tap-http
+```
+
+`verify:tap-api` covers input validation, that outcomes match the published
+price, that concurrent settles pay exactly once, that an unfetchable price
+voids and refunds, and that the `txns` log reconciles with the balance.
 
 ## Layout
 

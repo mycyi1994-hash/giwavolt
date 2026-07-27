@@ -2,7 +2,7 @@
 // house edge if the measurement is good, so: simulate a real price process,
 // measure vol the way the app does, build the grid from that measurement, then
 // score every offered cell against the TRUE process. Reports the realised edge.
-import { measureVol, type Tick } from "../lib/priceFeed";
+import { measureVol, type Tick } from "../lib/vol";
 import { bandStep, bandProbability, cellMultiplier, HOUSE_EDGE } from "../lib/grid";
 
 let seed = 7;

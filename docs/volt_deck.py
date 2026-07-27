@@ -204,7 +204,7 @@ games = [
     ("Tap Trading", CYAN, "Tap cells on the live BTC price grid. The line is the real exchange tick series, and every multiplier is fair odds on its measured volatility, minus the house edge. If the price lands in your cell, win stake × multiplier."),
     ("Death Fun", MAGENTA, "Flip safe tiles for a rising multiplier; cash out before you hit a skull. Provably-fair commit-reveal RNG."),
 ]
-cw, ch, gap = 540, 230, 28; x0, y = 70, 250
+cw, ch, gap = 540, 175, 28; x0, y = 70, 285
 for i,(t_,col,desc) in enumerate(games):
     x = x0 + i*(cw+gap)
     card(c, x, y, cw, ch, col)

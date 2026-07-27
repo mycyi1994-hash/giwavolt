@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ZoomIn, ZoomOut } from "lucide-react";
-import GameChart, { type BetStatus } from "@/components/GameChart";
+import { useAccount } from "wagmi";
+import GameChart, { type BetStatus, type PlacedBet, type PlaceResult, type Settlement } from "@/components/GameChart";
 import TapPanel from "@/components/play/TapPanel";
 import LiveFeed from "@/components/play/LiveFeed";
 import ConnectGate from "@/components/play/ConnectGate";
@@ -18,7 +19,8 @@ const fmtAmt = (real: boolean, n: number) => (real ? won(n) : usdc(n));
 const fmtPnl = (real: boolean, n: number) => `${n >= 0 ? "+" : "−"}${fmtAmt(real, Math.abs(n))}`;
 
 export default function TapTradingPage() {
-  const { mode, balance, adjust } = usePlay();
+  const { mode, balance, adjust, setBalance } = usePlay();
+  const { address } = useAccount();
   const real = mode === "real";
   const toast = useToast();
   const feed = useLivePrice(); // real BTC/USD trades — the chart's only input
@@ -34,10 +36,83 @@ export default function TapTradingPage() {
     setBid(mode === "real" ? 50_000 : 5);
   }, [mode]);
 
-  const ctxRef = useRef({ mode, balance });
-  ctxRef.current = { mode, balance };
+  const ctxRef = useRef({ mode, balance, address });
+  ctxRef.current = { mode, balance, address };
   const onBalanceDelta = useCallback((d: number) => adjust(ctxRef.current.mode, d), [adjust]);
   const getBalance = useCallback(() => ctxRef.current.balance[ctxRef.current.mode], []);
+
+  // REAL mode is server-authoritative: the browser proposes a cell and the
+  // server decides the price, the multiplier and the outcome. Everything below
+  // is transport — no odds or balances are computed on this side.
+  const settlementQueue = useRef<Settlement[]>([]);
+  const openBets = useRef(0);
+
+  const placeServerBet = useCallback(
+    async (b: PlacedBet): Promise<PlaceResult> => {
+      const addr = ctxRef.current.address;
+      if (!addr) return null;
+      try {
+        const r = await fetch("/api/game/tap/place", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ address: addr, ...b }),
+        });
+        const j = await r.json();
+        if (!r.ok || !j?.ok) {
+          toast.push("info", "BET NOT PLACED", typeof j?.error === "string" ? j.error : "server declined");
+          return null;
+        }
+        if (typeof j.balance === "number") setBalance("real", j.balance);
+        openBets.current += 1;
+        return { id: String(j.id), mult: Number(j.mult) };
+      } catch {
+        toast.push("info", "BET NOT PLACED", "could not reach the server");
+        return null;
+      }
+    },
+    [toast, setBalance]
+  );
+
+  const drainSettlements = useCallback((): Settlement[] => {
+    if (!settlementQueue.current.length) return [];
+    const out = settlementQueue.current;
+    settlementQueue.current = [];
+    return out;
+  }, []);
+
+  // Ask the server for outcomes it has decided. Polls faster while positions are
+  // open; keeps a slow beat otherwise so bets left behind by a closed tab still
+  // get picked up when the player comes back.
+  useEffect(() => {
+    if (!real || !address) return;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout>;
+
+    const poll = async () => {
+      try {
+        const r = await fetch("/api/game/tap/settle", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ address }),
+        });
+        const j = await r.json();
+        if (j?.ok) {
+          if (Array.isArray(j.settled) && j.settled.length) settlementQueue.current.push(...j.settled);
+          if (typeof j.balance === "number") setBalance("real", j.balance);
+          openBets.current = Number(j.open ?? 0);
+        }
+      } catch {
+        /* transient — the next poll retries */
+      }
+      if (!stopped) timer = setTimeout(poll, openBets.current > 0 ? 2000 : 6000);
+    };
+
+    poll();
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
+  }, [real, address, setBalance]);
 
   const onBet = useCallback(
     (b: { stake: number; mult: number; status: BetStatus }) => {
@@ -107,11 +182,14 @@ export default function TapTradingPage() {
           <GameChart
             bidSize={bid}
             zoom={zoom}
+            realMode={real}
             unit={real ? "tKRW" : "USDC"}
             onZoom={(f) => setZoom((z) => clampZoom(z * f))}
             onPrice={setPrice}
             onBalanceDelta={onBalanceDelta}
             onBet={onBet}
+            placeServerBet={placeServerBet}
+            drainSettlements={drainSettlements}
             getBalance={getBalance}
           />
         </main>

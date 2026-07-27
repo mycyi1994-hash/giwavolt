@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { cellMultiplier, multIntensity, bandStep } from "@/lib/grid";
 import { getFeedState, getTicks, isQuotable, subscribeFeed } from "@/lib/priceFeed";
+import { COL_INTERVAL_MS, MIN_BET_HORIZON_SEC } from "@/lib/tap";
 import { mult as fmtMult } from "@/lib/format";
 
 // compact amount for canvas labels (unit defaults to USDC; tKRW in REAL mode)
@@ -14,12 +15,10 @@ function amt(n: number, unit = "USDC"): string {
 const VIEW_PAST_MS = 64_000;
 const VIEW_FUTURE_MS = 46_000;
 const NOW_X = 0.5; // "now" line position (0..1)
-const COL_INTERVAL_MS = 3_400;
 const MIN_ROWS = 16;
 const MAX_ROWS = 24;
 const PAD_TOP = 16;
 const PAD_BOTTOM = 28;
-const MIN_BET_HORIZON = 10; // seconds — cannot bet on columns closer than this
 const STALE_SETTLE_MS = 6_000; // no fresh tick by settlement → void, don't guess
 const GRID_REBASE_TOLERANCE = 0.15; // re-size bands once vol has moved this much
 const PRICE_REPORT_MS = 100; // throttle for the onPrice callback
@@ -36,7 +35,16 @@ type Bet = {
   mult: number;
   status: "live" | "won" | "lost";
   bornAt: number;
+  /** set once the server has accepted the position; it then owns the outcome */
+  serverId?: string;
+  /** true while the place request is still in flight */
+  pending?: boolean;
 };
+
+/** A cell the player wants: a settlement time and an absolute price band. */
+export type PlacedBet = { colT: number; lo: number; hi: number; stake: number };
+export type PlaceResult = { id: string; mult: number } | null;
+export type Settlement = { id: string; status: "won" | "lost" | "void"; payout: number };
 type Floater = { x: number; y: number; text: string; born: number; kind: "win" | "cancel" };
 
 // cyan → purple → magenta → hot gold as the multiplier climbs
@@ -68,6 +76,12 @@ function cellRGB(t: number): [number, number, number] {
  *    price is stale or the vol estimate is cold, and a column that comes due
  *    without a fresh tick voids its bets and refunds them instead of settling
  *    on a price we can't stand behind.
+ *
+ * In REAL mode the chart stops being the referee. A tap is sent to the server,
+ * which prices the cell from its own market read and settles it against the
+ * exchange's published price — so what's drawn here is a view of the server's
+ * positions, not the source of truth for them. DEMO mode keeps settling
+ * locally, since there is no money to protect.
  */
 export default function GameChart({
   bidSize,
@@ -79,7 +93,8 @@ export default function GameChart({
   onBalanceDelta,
   onBet,
   onZoom,
-  onRealTap,
+  placeServerBet,
+  drainSettlements,
   getBalance,
 }: {
   bidSize: number;
@@ -91,7 +106,10 @@ export default function GameChart({
   onBalanceDelta: (d: number) => void;
   onBet: (b: { stake: number; mult: number; status: BetStatus }) => void;
   onZoom?: (factor: number) => void;
-  onRealTap?: (mult: number, sx: number, sy: number) => void;
+  /** REAL mode: open a position server-side. Resolves null if it was rejected. */
+  placeServerBet?: (b: PlacedBet) => Promise<PlaceResult>;
+  /** REAL mode: collect outcomes the server has decided since the last call. */
+  drainSettlements?: () => Settlement[];
   getBalance: () => number;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -106,8 +124,10 @@ export default function GameChart({
   realModeRef.current = realMode;
   const ambientRef = useRef(ambient);
   ambientRef.current = ambient;
-  const onRealTapRef = useRef(onRealTap);
-  onRealTapRef.current = onRealTap;
+  const placeServerBetRef = useRef(placeServerBet);
+  placeServerBetRef.current = placeServerBet;
+  const drainSettlementsRef = useRef(drainSettlements);
+  drainSettlementsRef.current = drainSettlements;
   const unitRef = useRef(unit);
   unitRef.current = unit;
   const balanceRef = useRef(getBalance);
@@ -224,9 +244,12 @@ export default function GameChart({
       while (columns.length && columns[0].t < now - 8000) columns.shift();
     }
 
+    /** Server-owned positions are settled by the server, never by this loop. */
+    const localOnly = (b: Bet) => !b.serverId && !b.pending;
+
     function voidColumn(c: Column, now: number) {
       for (const b of bets) {
-        if (b.status !== "live" || b.colT !== c.t) continue;
+        if (b.status !== "live" || b.colT !== c.t || !localOnly(b)) continue;
         b.status = "lost"; // marks it inactive; the refund is issued below
         b.bornAt = -1;
         onBalanceDeltaRef.current(b.stake);
@@ -243,7 +266,7 @@ export default function GameChart({
 
     function settleColumn(c: Column, now: number) {
       for (const b of bets) {
-        if (b.status !== "live" || b.colT !== c.t) continue;
+        if (b.status !== "live" || b.colT !== c.t || !localOnly(b)) continue;
         const ex = xForTime(c.t, now);
         const ey = yForPrice(bandCenter(b.band));
         if (b.band === c.winRow) {
@@ -288,14 +311,41 @@ export default function GameChart({
       const cell = cellAt(px, py, now);
       if (!cell) return;
 
-      // REAL mode: instant on-chain bet on the tapped cell's multiplier
-      if (realModeRef.current && onRealTapRef.current) {
+      // REAL mode: the server prices and owns the position. We draw a pending
+      // marker straight away so the tap feels instant, then either promote it
+      // on acceptance or drop it — the quote shown is whatever the server
+      // actually gave us, never the one we guessed locally.
+      if (realModeRef.current) {
+        const place = placeServerBetRef.current;
+        if (!place) return;
         const h = (cell.colT - now) / 1000;
-        if (h < MIN_BET_HORIZON) return;
-        const lo = bandLow(cell.band) - price;
-        const m = cellMultiplier(lo, lo + step, h, price, vol);
+        if (h < MIN_BET_HORIZON_SEC) return;
+        const loAbs = bandLow(cell.band);
+        const hiAbs = loAbs + step;
+        const m = cellMultiplier(loAbs - price, hiAbs - price, h, price, vol);
         if (m <= 0) return;
-        onRealTapRef.current(m, px, py);
+        const stake = bidRef.current;
+        if (stake <= 0 || balanceRef.current() < stake) return;
+        if (bets.some((b) => b.status === "live" && b.colT === cell.colT && b.band === cell.band)) return;
+
+        const bet: Bet = { id: nextBetId++, colT: cell.colT, band: cell.band, stake, mult: m, status: "live", bornAt: now, pending: true };
+        bets.push(bet);
+        place({ colT: cell.colT, lo: loAbs, hi: hiAbs, stake })
+          .then((res) => {
+            const i = bets.indexOf(bet);
+            if (!res) {
+              if (i >= 0) bets.splice(i, 1);
+              return;
+            }
+            bet.pending = false;
+            bet.serverId = res.id;
+            bet.mult = res.mult; // the server's quote wins, not ours
+            onBetRef.current({ stake: bet.stake, mult: res.mult, status: "live" });
+          })
+          .catch(() => {
+            const i = bets.indexOf(bet);
+            if (i >= 0) bets.splice(i, 1);
+          });
         return;
       }
 
@@ -311,9 +361,9 @@ export default function GameChart({
         return;
       }
 
-      // place a new bet — only ≥ MIN_BET_HORIZON seconds out, on an offered cell
+      // place a new bet — only ≥ MIN_BET_HORIZON_SEC seconds out, on an offered cell
       const h = (cell.colT - now) / 1000;
-      if (h < MIN_BET_HORIZON) return;
+      if (h < MIN_BET_HORIZON_SEC) return;
       const lo = bandLow(cell.band) - price;
       const m = cellMultiplier(lo, lo + step, h, price, vol);
       if (m <= 0) return;
@@ -365,6 +415,31 @@ export default function GameChart({
       range.max += (price + half - range.max) * 0.1;
     }
 
+    // REAL mode: fold in the outcomes the server has decided. The chart only
+    // renders them — it has no say in what they are.
+    function applyServerSettlements(now: number) {
+      const results = drainSettlementsRef.current?.();
+      if (!results?.length || !range) return;
+      for (const r of results) {
+        const b = bets.find((x) => x.serverId === r.id && x.status === "live");
+        if (!b) continue;
+        const ex = xForTime(b.colT, now);
+        const ey = yForPrice(bandCenter(b.band));
+        if (r.status === "void") {
+          b.status = "lost";
+          b.bornAt = -1;
+          onBetRef.current({ stake: b.stake, mult: b.mult, status: "cancel" });
+          floaters.push({ x: ex, y: ey, text: "VOID · REFUND", born: now, kind: "cancel" });
+          continue;
+        }
+        const won = r.status === "won";
+        b.status = won ? "won" : "lost";
+        onBetRef.current({ stake: b.stake, mult: b.mult, status: won ? "won" : "lost" });
+        effects.push({ x: ex, y: ey, kind: won ? "win" : "lose", born: now });
+        if (won) floaters.push({ x: ex, y: ey, text: "+" + amt(r.payout, unitRef.current), born: now, kind: "win" });
+      }
+    }
+
     function drawNotice(text: string, sub: string) {
       ctx.clearRect(0, 0, W, H);
       if (ambientRef.current) return;
@@ -410,6 +485,7 @@ export default function GameChart({
 
       updateRange(view, price);
       ensureColumns(now, price, fresh);
+      applyServerSettlements(now);
 
       if (now - lastReport > PRICE_REPORT_MS) {
         lastReport = now;
@@ -434,7 +510,7 @@ export default function GameChart({
         for (const c of columns) {
           if (c.resolved) continue;
           const h = (c.t - now) / 1000;
-          if (h < MIN_BET_HORIZON) continue; // locked zone drawn separately
+          if (h < MIN_BET_HORIZON_SEC) continue; // locked zone drawn separately
           const x0 = xForTime(c.t, now);
           const x1 = xForTime(c.t + COL_INTERVAL_MS, now);
           if (x1 < nowX || x0 > W) continue;
@@ -500,6 +576,8 @@ export default function GameChart({
         const yTop = yForPrice(bandLow(bt.band + 1));
         const yBot = yForPrice(bandLow(bt.band));
         const won = bt.status === "won";
+        // a bet the server hasn't confirmed yet reads as provisional
+        ctx.globalAlpha = bt.pending ? 0.45 : 1;
         ctx.fillStyle = won ? "rgba(57,255,20,0.92)" : "rgba(255,210,63,0.18)";
         roundRect(ctx, x0 + 1.5, yTop + 1.5, x1 - x0 - 3, yBot - yTop - 3, 3);
         ctx.fill();
@@ -507,16 +585,19 @@ export default function GameChart({
         ctx.shadowColor = won ? "rgba(57,255,20,0.8)" : "rgba(255,210,63,0.7)";
         ctx.shadowBlur = 10;
         ctx.lineWidth = 1.8;
+        if (bt.pending) ctx.setLineDash([4, 3]);
         roundRect(ctx, x0 + 1.5, yTop + 1.5, x1 - x0 - 3, yBot - yTop - 3, 3);
         ctx.stroke();
         ctx.shadowBlur = 0;
+        ctx.setLineDash([]);
         if (yBot - yTop > 16) {
           ctx.fillStyle = won ? "#06060e" : "#ffe27a";
           ctx.fillText(amt(bt.stake, unitRef.current), (x0 + x1) / 2, (yTop + yBot) / 2 - 6);
           ctx.font = "600 10px var(--font-mono, monospace)";
-          ctx.fillText(fmtMult(bt.mult), (x0 + x1) / 2, (yTop + yBot) / 2 + 7);
+          ctx.fillText(bt.pending ? "…" : fmtMult(bt.mult), (x0 + x1) / 2, (yTop + yBot) / 2 + 7);
           ctx.font = "700 12px var(--font-display, sans-serif)";
         }
+        ctx.globalAlpha = 1;
       }
 
       // ---- price line: the real tick series, decimated to ~one point per pixel ----

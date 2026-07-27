@@ -9,7 +9,10 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "verify:vol": "tsx scripts/verify-vol.ts",
-    "verify:edge": "tsx scripts/verify-edge.ts"
+    "verify:edge": "tsx scripts/verify-edge.ts",
+    "verify:tap-api": "tsx scripts/verify-tap-api.mts",
+    "verify:tap-http": "tsx scripts/verify-tap-http.mjs",
+    "mock:exchange": "node scripts/mock-exchange.mjs"
   },
   "dependencies": {
     "@rainbow-me/rainbowkit": "^2.1.6",

@@ -1,7 +1,7 @@
 // Does the realized-vol estimator actually recover the volatility of a price
 // series? If it doesn't, the whole grid is mispriced, so this is the load-
 // bearing test for the real-price switch.
-import { measureVol, type Tick } from "../lib/priceFeed";
+import { measureVol, type Tick } from "../lib/vol";
 
 // Box-Muller with a fixed seed so the run is reproducible.
 let seed = 42;
