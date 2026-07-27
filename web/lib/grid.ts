@@ -1,8 +1,8 @@
 // Multiplier model for the tap-trading grid — exact fair odds minus a house edge.
 //
-// The line is modelled as a driftless Gaussian random walk: from the current
+// The price is modelled as a driftless Gaussian random walk: from the current
 // price, the price `h` seconds later is Normal(price, sigma) with
-// `sigma = price * VOL * sqrt(h)`. A band spanning [lo, hi] (offsets from the
+// `sigma = price * vol * sqrt(h)`. A band spanning [lo, hi] (offsets from the
 // current price) is hit with probability
 //
 //   prob = Φ(hi/sigma) − Φ(lo/sigma)
@@ -13,14 +13,41 @@
 //   multiplier = (1 - HOUSE_EDGE) / prob   (clamped)
 //
 // Because this is the *exact* probability of the band the price lands in, the
-// expected value of every tap is (1 - HOUSE_EDGE) as long as the price has
-// volatility VOL — so the house keeps HOUSE_EDGE of all volume on average. The
-// same model feeds the on-chain grid (game/contracts/scripts/grid.ts).
+// expected value of every tap is (1 - HOUSE_EDGE) — but only if `vol` is the
+// volatility the price actually has. The chart plots real BTC/USD, so `vol` is
+// passed in from the live realized-volatility estimate in lib/priceFeed.ts
+// rather than being a constant here. A hardcoded volatility against a real
+// price series would misprice every cell: too high and the near cells pay far
+// more than their true odds (a negative edge for the house), too low and
+// nothing but the centre band is ever offered.
 
 export const HOUSE_EDGE = 0.07; // 7%
 export const MAX_MULT = 100; // bigger payouts — far cells reach up to 100×
 export const MIN_MULT = 1.1;
-export const VOL_PER_SQRT_SEC = 0.00045; // "game" volatility, tuned for a lively line
+
+// Realized-volatility guard rails, per √second. BTC typically sits near 1e-4;
+// the bounds exist so a thin-liquidity burst or a stalled feed can't produce a
+// nonsense grid — they are not a tuning knob for the odds.
+export const VOL_MIN = 0.00002;
+export const VOL_MAX = 0.0008;
+
+// Band height is expressed as a fraction of one standard deviation at a
+// reference horizon, so the grid keeps a constant *shape* (how many rows are
+// offered, how fast the multipliers climb) as real volatility moves. The
+// constants reproduce the density the grid had back when it was drawn against a
+// simulated walk, so the game feels the same — it is just priced off real data
+// now.
+const H_REF_SEC = 28; // midpoint of the bettable horizon
+const BAND_SIGMA_FRACTION = 0.2436;
+
+export function clampVol(vol: number): number {
+  return Math.min(VOL_MAX, Math.max(VOL_MIN, vol));
+}
+
+/** Height of one grid band in price units, sized to current realized vol. */
+export function bandStep(price: number, vol: number): number {
+  return price * clampVol(vol) * Math.sqrt(H_REF_SEC) * BAND_SIGMA_FRACTION;
+}
 
 // erf via Abramowitz & Stegun 7.1.26
 function erf(x: number): number {
@@ -41,8 +68,8 @@ function Phi(z: number): number {
 
 // Probability that (price+lo) ≤ terminal < (price+hi); lo=-Infinity / hi=Infinity
 // select the catch-all tails.
-export function bandProbability(lo: number, hi: number, hSeconds: number, price: number): number {
-  const sigma = price * VOL_PER_SQRT_SEC * Math.sqrt(Math.max(hSeconds, 0.4));
+export function bandProbability(lo: number, hi: number, hSeconds: number, price: number, vol: number): number {
+  const sigma = price * clampVol(vol) * Math.sqrt(Math.max(hSeconds, 0.4));
   const pLo = lo === -Infinity ? 0 : Phi(lo / sigma);
   const pHi = hi === Infinity ? 1 : Phi(hi / sigma);
   return Math.max(pHi - pLo, 1e-12);
@@ -53,8 +80,8 @@ export function bandProbability(lo: number, hi: number, hSeconds: number, price:
 // bettable only when its fair price sits in (1x, MAX_MULT]. Too-likely cells
 // (≤1x) and too-unlikely cells (>MAX_MULT) are simply not offered, so every
 // offered cell pays exactly (1 - HOUSE_EDGE)/prob and the edge is exactly 7%.
-export function cellMultiplier(lo: number, hi: number, hSeconds: number, price: number): number {
-  const prob = bandProbability(lo, hi, hSeconds, price);
+export function cellMultiplier(lo: number, hi: number, hSeconds: number, price: number, vol: number): number {
+  const prob = bandProbability(lo, hi, hSeconds, price, vol);
   const m = (1 - HOUSE_EDGE) / prob;
   if (m <= 1.001 || m > MAX_MULT) return 0;
   return m;

@@ -6,7 +6,7 @@ import { TrendingUp, Skull, Coins, Flame } from "lucide-react";
 type Kind = "win" | "cash" | "bust" | "bet";
 type Ev = { id: number; user: string; game: string; kind: Kind; mult?: number; amount: number; mega: boolean };
 
-const GAMES = ["TAP", "CANDLE", "DEATH"];
+const GAMES = ["TAP", "DEATH"];
 let seq = 0;
 const rndUser = () => "0x" + Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, "0") + "…" + Math.floor(Math.random() * 0xffff).toString(16).padStart(4, "0");
 

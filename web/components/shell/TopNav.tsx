@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
-import { Zap, Home, LineChart, Skull, Trophy, User, TrendingUp, CandlestickChart, Wallet, Radio } from "lucide-react";
+import { Zap, Home, LineChart, Skull, Trophy, User, Wallet } from "lucide-react";
 import ModeToggle from "@/components/play/ModeToggle";
 import SoundToggle from "@/components/play/SoundToggle";
 import AnimatedNumber from "@/components/ui/AnimatedNumber";
@@ -12,9 +12,7 @@ import { useFunds } from "@/lib/useFunds";
 const TABS = [
   { href: "/terminal", label: "Home", icon: Home },
   { href: "/terminal/tap", label: "Tap Trading", icon: LineChart },
-  { href: "/terminal/candle", label: "Next Candle", icon: CandlestickChart },
   { href: "/terminal/death", label: "Death Fun", icon: Skull },
-  { href: "/terminal/breakout", label: "Breakout", icon: Radio },
   { href: "/terminal/leaderboard", label: "Leaderboard", icon: Trophy },
 ];
 
@@ -32,26 +30,8 @@ export default function TopNav() {
         <span className="font-display text-[16px] font-black tracking-[0.18em] text-txt neon-cyan">VOLT</span>
       </Link>
 
-      {/* prominent PREDICT tab */}
-      {(() => {
-        const active = pathname.startsWith("/terminal/predict");
-        return (
-          <Link
-            href="/terminal/predict"
-            className={`relative ml-2 flex items-center gap-1.5 border px-4 py-2 font-display text-[14px] font-black tracking-wider clip transition ${
-              active
-                ? "border-cyan bg-cyan/20 text-cyan"
-                : "border-cyan/60 bg-gradient-to-r from-cyan/15 to-magenta/15 text-txt hover:from-cyan/25 hover:to-magenta/25"
-            } animate-glow`}
-          >
-            <TrendingUp size={16} className="text-cyan" /> PREDICT
-            <span className="rounded bg-magenta px-1 text-[8px] font-bold text-[#06060e]">NEW</span>
-          </Link>
-        );
-      })()}
-
       {/* tabs */}
-      <nav className="ml-2 flex items-center gap-1">
+      <nav className="ml-4 flex items-center gap-1">
         {TABS.map(({ href, label, icon: Icon }) => {
           const active = href === "/terminal" ? pathname === href : pathname.startsWith(href);
           return (

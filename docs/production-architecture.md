@@ -10,7 +10,9 @@ on-chain custody, server-authoritative (anti-cheat) settlement.
   wallet). Deposits/withdrawals are on-chain; play is off-chain.
 - **Settlement:** **server-authoritative** — the server decides outcomes, so the
   browser can't fake wins. Fairness is verifiable: **provably-fair commit-reveal**
-  RNG for Tap/Death, **price oracle** for Candle/Breakout.
+  RNG for Death, **price oracle** for Tap.
+  > Status: not yet wired. `/api/game/tap` exists but nothing calls it, and Tap
+  > currently settles in the browser against the live price feed. See P2.
 - **Trust (honest):** removes external theft + gives transparent on-chain
   deposit/withdraw + verifiable fairness. Because play is off-chain the operator
   still signs balances (can't be made fully trustless without state channels).
@@ -48,8 +50,11 @@ Giwa Sepolia: TestKRW (tKRW) + GameVault
 - **P1 — DB + server-authoritative engine:** Supabase schema (users, balances,
   bets, fair-seeds, withdraw-nonces). Move the ledger off the JSON file. Each bet
   is created + resolved server-side; client only animates.
-- **P2 — Provably-fair + oracle:** commit-reveal seeds for Tap/Death; real
-  BTC/ETH price feed for Candle/Breakout resolution.
+- **P2 — Provably-fair + oracle:** commit-reveal seeds for Death; a
+  server-side BTC price oracle for Tap resolution. The browser already plays
+  Tap against the real trade feed (`web/lib/priceFeed.ts`), but it also settles
+  its own bets — the server needs to record the same feed and decide outcomes
+  before REAL mode can be trusted.
 - **P3 — Deposit/withdraw wiring:** deposit watcher (events → credit); withdraw
   endpoint signs a voucher and relays the tx; frontend deposit/withdraw UI.
 - **P4 — Deploy:** Vercel + Supabase env, operator key as a server secret,

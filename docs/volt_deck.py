@@ -199,19 +199,17 @@ c.showPage()
 # ---- 3. THE GAMES -------------------------------------------------------
 bg(c)
 kicker(c, 70, H-95, "Product", MAGENTA)
-title(c, 70, H-150, "Four games, one balance")
+title(c, 70, H-150, "Two games, one balance")
 games = [
-    ("Tap Trading", CYAN, "Tap cells on a live price grid — if the line crosses your cell, win stake × multiplier."),
-    ("Next Candle", GOLD, "Call the next BTC candle: up or down. Fast binary rounds, instant payout."),
-    ("Breakout", CYAN, "Pick which barrier the price touches first — up or down. Real price, ~1.9× payout."),
-    ("Death Fun", MAGENTA, "Flip safe tiles for a rising multiplier; cash out before you hit a skull."),
+    ("Tap Trading", CYAN, "Tap cells on the live BTC price grid. The line is the real exchange tick series, and every multiplier is fair odds on its measured volatility, minus the house edge. If the price lands in your cell, win stake × multiplier."),
+    ("Death Fun", MAGENTA, "Flip safe tiles for a rising multiplier; cash out before you hit a skull. Provably-fair commit-reveal RNG."),
 ]
-cw, ch, gap = 540, 130, 28; x0, y0 = 70, 165
+cw, ch, gap = 540, 230, 28; x0, y = 70, 250
 for i,(t_,col,desc) in enumerate(games):
-    x = x0 + (i%2)*(cw+gap); y = y0 + (1-i//2)*(ch+gap)
+    x = x0 + i*(cw+gap)
     card(c, x, y, cw, ch, col)
-    c.setFont(FB, 20); c.setFillColor(col); c.drawString(x+26, y+ch-42, t_)
-    para_w(c, x+26, y+ch-72, desc, cw-52, size=13.5, col=MUT, lead=20)
+    c.setFont(FB, 22); c.setFillColor(col); c.drawString(x+26, y+ch-46, t_)
+    para_w(c, x+26, y+ch-82, desc, cw-52, size=13.5, col=MUT, lead=21)
 footer(c, 3)
 c.showPage()
 
@@ -338,10 +336,10 @@ title(c, 70, H-150, "Where we are")
 card(c, 70, 330, 540, 200, LIME)
 c.setFont(FB, 18); c.setFillColor(LIME); c.drawString(96, 478, "Live now — testnet")
 para(c, 96, 446, [
-    "· Four games playable end-to-end",
+    "· Two games playable end-to-end",
+    "· Live BTC feed — odds priced off measured vol",
     "· Off-chain tKRW balance + faucet",
     "· On-chain deposit / withdraw via GameVault",
-    "· Provably-fair engine + transparent edge",
     "· Deployed on Giwa Sepolia",
 ], size=14, col=TXT, lead=27)
 card(c, 640, 330, 540, 200, CYAN)

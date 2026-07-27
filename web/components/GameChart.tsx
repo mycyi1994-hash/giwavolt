@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { cellMultiplier, multIntensity, VOL_PER_SQRT_SEC } from "@/lib/grid";
+import { cellMultiplier, multIntensity, bandStep } from "@/lib/grid";
+import { getFeedState, getTicks, isQuotable, subscribeFeed } from "@/lib/priceFeed";
 import { mult as fmtMult } from "@/lib/format";
 
 // compact amount for canvas labels (unit defaults to USDC; tKRW in REAL mode)
@@ -14,17 +15,19 @@ const VIEW_PAST_MS = 64_000;
 const VIEW_FUTURE_MS = 46_000;
 const NOW_X = 0.5; // "now" line position (0..1)
 const COL_INTERVAL_MS = 3_400;
-const STEP_PCT = 0.00058;
 const MIN_ROWS = 16;
 const MAX_ROWS = 24;
-const TICK_MS = 80; // denser samples → smoother line
 const PAD_TOP = 16;
 const PAD_BOTTOM = 28;
 const MIN_BET_HORIZON = 10; // seconds — cannot bet on columns closer than this
+const STALE_SETTLE_MS = 6_000; // no fresh tick by settlement → void, don't guess
+const GRID_REBASE_TOLERANCE = 0.15; // re-size bands once vol has moved this much
+const PRICE_REPORT_MS = 100; // throttle for the onPrice callback
+const MIN_POINT_PX = 0.6; // decimate the tick line to roughly one point per pixel
 
 export type BetStatus = "live" | "won" | "lost" | "cancel";
 
-type Column = { t: number; resolved: boolean; winRow: number; winPrice: number };
+type Column = { t: number; resolved: boolean; winRow: number; winPrice: number; void: boolean };
 type Bet = {
   id: number;
   colT: number;
@@ -51,6 +54,21 @@ function cellRGB(t: number): [number, number, number] {
   return [255, lerp(43, 220, k), lerp(214, 70, k)]; // magenta → hot gold/orange
 }
 
+/**
+ * The Tap Trading chart, drawn from real BTC/USD trades.
+ *
+ * The line is the exchange tick series verbatim — no smoothing of the price
+ * itself, no synthetic backfill, no random walk. Two consequences fall out of
+ * that and are load-bearing:
+ *
+ *  · Odds come from *measured* volatility. The band geometry and every
+ *    multiplier are derived from the realized vol of the same ticks being
+ *    plotted, so the 7% edge holds against the real price process.
+ *  · When the feed is not trustworthy the game stops. No quotes while the
+ *    price is stale or the vol estimate is cold, and a column that comes due
+ *    without a fresh tick voids its bets and refunds them instead of settling
+ *    on a price we can't stand behind.
+ */
 export default function GameChart({
   bidSize,
   zoom = 1,
@@ -63,7 +81,6 @@ export default function GameChart({
   onZoom,
   onRealTap,
   getBalance,
-  getRealPrice,
 }: {
   bidSize: number;
   zoom?: number;
@@ -76,7 +93,6 @@ export default function GameChart({
   onZoom?: (factor: number) => void;
   onRealTap?: (mult: number, sx: number, sy: number) => void;
   getBalance: () => number;
-  getRealPrice?: () => number;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -96,29 +112,33 @@ export default function GameChart({
   unitRef.current = unit;
   const balanceRef = useRef(getBalance);
   balanceRef.current = getBalance;
-  const realPriceRef = useRef(getRealPrice);
-  realPriceRef.current = getRealPrice;
+  const onPriceRef = useRef(onPrice);
+  onPriceRef.current = onPrice;
+  const onBetRef = useRef(onBet);
+  onBetRef.current = onBet;
+  const onBalanceDeltaRef = useRef(onBalanceDelta);
+  onBalanceDeltaRef.current = onBalanceDelta;
 
   useEffect(() => {
     const canvas = canvasRef.current!;
     const wrap = wrapRef.current!;
     const ctx = canvas.getContext("2d")!;
 
-    // The displayed level tracks the REAL price (getRealPrice); the grid/edge use
-    // the price's *deviation* from this anchor, which is anchor-independent — so
-    // the multiplier math stays exact while the chart shows live BTC.
-    const seed = realPriceRef.current?.();
-    let anchor = seed && seed > 0 ? seed : 1673.49;
-    let step = anchor * STEP_PCT;
-    let price = anchor;
-    let renderPrice = anchor; // eased toward `price` every frame for a smooth head
-    const history: { t: number; p: number }[] = [{ t: Date.now(), p: price }];
+    // Mounting the chart keeps the shared feed connected; the render loop reads
+    // it directly rather than through React so ticks never cost a re-render.
+    const unsubscribe = subscribeFeed(() => {});
+
+    // Grid geometry. Bands are absolute price levels: a cell you are looking at
+    // is a real price range, and it stays put while a bet on it is live.
+    let anchor = 0;
+    let step = 0;
     const columns: Column[] = [];
     const bets: Bet[] = [];
     const floaters: Floater[] = [];
     const effects: { x: number; y: number; kind: "win" | "lose"; born: number }[] = [];
     let nextBetId = 1;
-    let range = { min: price - MIN_ROWS * step * 0.5, max: price + MIN_ROWS * step * 0.5 };
+    let range: { min: number; max: number } | null = null;
+    let lastReport = 0;
     const mouse = { x: -1, y: -1, inside: false };
 
     let W = 0;
@@ -145,7 +165,7 @@ export default function GameChart({
     const plotTop = PAD_TOP;
     const plotBot = () => H - PAD_BOTTOM;
     // ambient (home backdrop): push "now" right so the line fills the left, and
-    // scroll faster.
+    // show a shorter window so the movement reads at a glance.
     const NW = () => (ambientRef.current ? 0.84 : NOW_X);
     const VP = () => (ambientRef.current ? VIEW_PAST_MS * 0.5 : VIEW_PAST_MS);
     const VF = () => (ambientRef.current ? VIEW_FUTURE_MS * 0.5 : VIEW_FUTURE_MS);
@@ -157,100 +177,68 @@ export default function GameChart({
     }
     function yForPrice(p: number) {
       const bot = plotBot();
-      return bot - ((p - range.min) / (range.max - range.min)) * (bot - plotTop);
+      const r = range!;
+      return bot - ((p - r.min) / (r.max - r.min)) * (bot - plotTop);
     }
 
-    // ---- gaussian price walk (same VOL as the multiplier model) ----
-    let spare: number | null = null;
-    function gaussian(): number {
-      if (spare !== null) {
-        const v = spare;
-        spare = null;
-        return v;
+    // Size the bands to current realized volatility. Only ever re-sized while
+    // no bet is live, so a resting position never has the ground moved under it.
+    function ensureGrid(price: number, vol: number) {
+      const target = bandStep(price, vol);
+      if (!step) {
+        step = target;
+        anchor = Math.round(price / step) * step;
+        return;
       }
-      let u = 0;
-      let v = 0;
-      while (u === 0) u = Math.random();
-      while (v === 0) v = Math.random();
-      const r = Math.sqrt(-2 * Math.log(u));
-      spare = r * Math.sin(2 * Math.PI * v);
-      return r * Math.cos(2 * Math.PI * v);
-    }
-    const dt = TICK_MS / 1000;
-
-    // backfill history so the chart is already full of line on first paint —
-    // same volatility as the live walk (no flat baseline), and fit the initial
-    // range to the backfilled prices so nothing clips off-screen.
-    (() => {
-      const n0 = Date.now();
-      const steps = Math.floor(VIEW_PAST_MS / TICK_MS);
-      const back: { t: number; p: number }[] = [];
-      let p = anchor;
-      let mn = anchor;
-      let mx = anchor;
-      for (let i = steps; i >= 0; i--) {
-        back.push({ t: n0 - i * TICK_MS, p }); // chronological: oldest → newest
-        p += p * VOL_PER_SQRT_SEC * Math.sqrt(dt) * gaussian() + (anchor - p) * 0.004;
-        mn = Math.min(mn, p);
-        mx = Math.max(mx, p);
-      }
-      history.length = 0;
-      for (const b of back) history.push(b);
-      price = back[back.length - 1].p;
-      renderPrice = price;
-      const half = Math.min(Math.max(price - mn, mx - price, (MIN_ROWS * step) / 2) + step * 2, (MAX_ROWS * step) / 2);
-      range = { min: price - half, max: price + half };
-    })();
-
-    let lastTick = Date.now();
-    function stepPrice(now: number) {
-      while (now - lastTick >= TICK_MS) {
-        lastTick += TICK_MS;
-        // re-anchor toward the live price, shifting everything by the same delta
-        // so the deviation (price − anchor) — and therefore every band index and
-        // multiplier outcome — is preserved. Keeps the chart continuous.
-        const real = realPriceRef.current?.();
-        if (real && real > 0) {
-          const d = (real - anchor) * 0.08;
-          if (Math.abs(d) > 1e-9) {
-            anchor += d;
-            step = anchor * STEP_PCT;
-            price += d;
-            renderPrice += d;
-            for (const h of history) h.p += d;
-            range.min += d;
-            range.max += d;
-            for (const col of columns) if (col.winPrice) col.winPrice += d;
-          }
-        }
-        const vol = VOL_PER_SQRT_SEC * (ambientRef.current ? 2.4 : 1);
-        price += price * vol * Math.sqrt(dt) * gaussian() + (anchor - price) * 0.0006;
-        history.push({ t: lastTick, p: price });
-        onPrice(price);
-      }
-      const cutoff = now - VP() - 2000;
-      while (history.length > 2 && history[0].t < cutoff) history.shift();
+      if (bets.some((b) => b.status === "live")) return;
+      if (Math.abs(target / step - 1) < GRID_REBASE_TOLERANCE) return;
+      step = target;
+      anchor = Math.round(price / step) * step;
     }
 
-    function ensureColumns(now: number) {
+    function ensureColumns(now: number, price: number, fresh: boolean) {
       if (columns.length === 0) {
         const first = Math.ceil((now + 4000) / COL_INTERVAL_MS) * COL_INTERVAL_MS;
-        columns.push({ t: first, resolved: false, winRow: 0, winPrice: 0 });
+        columns.push({ t: first, resolved: false, winRow: 0, winPrice: 0, void: false });
       }
       const lastT = columns[columns.length - 1].t;
       const horizon = now + VF() + COL_INTERVAL_MS;
       for (let t = lastT + COL_INTERVAL_MS; t <= horizon; t += COL_INTERVAL_MS) {
-        columns.push({ t, resolved: false, winRow: 0, winPrice: 0 });
+        columns.push({ t, resolved: false, winRow: 0, winPrice: 0, void: false });
       }
       for (const c of columns) {
         if (!c.resolved && now >= c.t) {
           c.resolved = true;
+          // Settling needs a price we can defend. Without a fresh tick the
+          // honest move is to hand the stake back, not to invent an outcome.
+          if (!fresh) {
+            c.void = true;
+            voidColumn(c, now);
+            continue;
+          }
           c.winPrice = price;
           c.winRow = bandForPrice(price);
           settleColumn(c, now);
         }
       }
       while (columns.length && columns[0].t < now - 8000) columns.shift();
+    }
+
+    function voidColumn(c: Column, now: number) {
+      for (const b of bets) {
+        if (b.status !== "live" || b.colT !== c.t) continue;
+        b.status = "lost"; // marks it inactive; the refund is issued below
+        b.bornAt = -1;
+        onBalanceDeltaRef.current(b.stake);
+        onBetRef.current({ stake: b.stake, mult: b.mult, status: "cancel" });
+        floaters.push({
+          x: xForTime(c.t, now),
+          y: range ? yForPrice(bandCenter(b.band)) : H / 2,
+          text: "VOID · REFUND",
+          born: now,
+          kind: "cancel",
+        });
+      }
     }
 
     function settleColumn(c: Column, now: number) {
@@ -261,19 +249,20 @@ export default function GameChart({
         if (b.band === c.winRow) {
           b.status = "won";
           const payout = b.stake * b.mult;
-          onBalanceDelta(payout);
-          onBet({ stake: b.stake, mult: b.mult, status: "won" });
+          onBalanceDeltaRef.current(payout);
+          onBetRef.current({ stake: b.stake, mult: b.mult, status: "won" });
           floaters.push({ x: ex, y: ey, text: "+" + amt(payout, unitRef.current), born: now, kind: "win" });
           effects.push({ x: ex, y: ey, kind: "win", born: now });
         } else {
           b.status = "lost";
-          onBet({ stake: b.stake, mult: b.mult, status: "lost" });
+          onBetRef.current({ stake: b.stake, mult: b.mult, status: "lost" });
           effects.push({ x: ex, y: ey, kind: "lose", born: now });
         }
       }
     }
 
     function cellAt(px: number, py: number, now: number): { colT: number; band: number } | null {
+      if (!step || !range) return null;
       const nowX = W * NW();
       if (px < nowX) return null;
       for (const c of columns) {
@@ -289,18 +278,24 @@ export default function GameChart({
     }
 
     function handleClick(px: number, py: number) {
+      const feed = getFeedState();
+      // No quotes unless the feed is live and the vol estimate is warm — an
+      // uncertain price is not something to take money against.
+      if (!isQuotable(feed) || ambientRef.current) return;
+      const price = feed.price!;
+      const vol = feed.vol!;
       const now = Date.now();
       const cell = cellAt(px, py, now);
       if (!cell) return;
 
       // REAL mode: instant on-chain bet on the tapped cell's multiplier
-      if (realModeRef.current) {
+      if (realModeRef.current && onRealTapRef.current) {
         const h = (cell.colT - now) / 1000;
         if (h < MIN_BET_HORIZON) return;
         const lo = bandLow(cell.band) - price;
-        const m = cellMultiplier(lo, lo + step, h, price);
+        const m = cellMultiplier(lo, lo + step, h, price, vol);
         if (m <= 0) return;
-        onRealTapRef.current?.(m, px, py);
+        onRealTapRef.current(m, px, py);
         return;
       }
 
@@ -310,8 +305,8 @@ export default function GameChart({
         existing.status = "lost"; // mark inactive; will be culled
         existing.bornAt = -1; // cull immediately
         bets.splice(bets.indexOf(existing), 1);
-        onBalanceDelta(existing.stake);
-        onBet({ stake: existing.stake, mult: existing.mult, status: "cancel" });
+        onBalanceDeltaRef.current(existing.stake);
+        onBetRef.current({ stake: existing.stake, mult: existing.mult, status: "cancel" });
         floaters.push({ x: xForTime(cell.colT, now), y: yForPrice(bandCenter(cell.band)), text: "CANCEL", born: now, kind: "cancel" });
         return;
       }
@@ -320,13 +315,13 @@ export default function GameChart({
       const h = (cell.colT - now) / 1000;
       if (h < MIN_BET_HORIZON) return;
       const lo = bandLow(cell.band) - price;
-      const m = cellMultiplier(lo, lo + step, h, price);
+      const m = cellMultiplier(lo, lo + step, h, price, vol);
       if (m <= 0) return;
       const stake = bidRef.current;
       if (stake <= 0 || balanceRef.current() < stake) return;
       bets.push({ id: nextBetId++, colT: cell.colT, band: cell.band, stake, mult: m, status: "live", bornAt: now });
-      onBalanceDelta(-stake);
-      onBet({ stake, mult: m, status: "live" });
+      onBalanceDeltaRef.current(-stake);
+      onBetRef.current({ stake, mult: m, status: "live" });
     }
 
     function onMove(e: MouseEvent) {
@@ -351,101 +346,151 @@ export default function GameChart({
     canvas.addEventListener("click", onClick);
     canvas.addEventListener("wheel", onWheel, { passive: false });
 
-    function updateRange(now: number) {
+    // Viewport only: the vertical window eases, the price never does. The axis
+    // labels move with it, so nothing about the price is misrepresented.
+    function updateRange(view: { t: number; p: number }[], price: number) {
       let lo = price;
       let hi = price;
-      for (const h of history) {
-        if (h.t < now - VP()) continue;
+      for (const h of view) {
         if (h.p < lo) lo = h.p;
         if (h.p > hi) hi = h.p;
       }
-      // keep the CURRENT price pinned to the vertical centre (don't drift with
-      // trend); half-height tracks recent volatility, clamped + zoomed.
-      const center = renderPrice;
       const z = zoomRef.current;
       const half = Math.min(Math.max((hi - lo) / 2 + step * 2, (MIN_ROWS * step) / 2), (MAX_ROWS * step) / 2) / z;
-      range.min += (center - half - range.min) * 0.1;
-      range.max += (center + half - range.max) * 0.1;
+      if (!range) {
+        range = { min: price - half, max: price + half };
+        return;
+      }
+      range.min += (price - half - range.min) * 0.1;
+      range.max += (price + half - range.max) * 0.1;
+    }
+
+    function drawNotice(text: string, sub: string) {
+      ctx.clearRect(0, 0, W, H);
+      if (ambientRef.current) return;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = "rgba(139,147,184,0.85)";
+      ctx.font = "600 13px var(--font-mono, monospace)";
+      ctx.fillText(text, W / 2, H / 2 - 10);
+      ctx.fillStyle = "rgba(139,147,184,0.5)";
+      ctx.font = "500 11px var(--font-mono, monospace)";
+      ctx.fillText(sub, W / 2, H / 2 + 12);
     }
 
     function draw() {
+      raf = requestAnimationFrame(draw);
       const now = Date.now();
-      stepPrice(now);
-      ensureColumns(now);
-      updateRange(now);
-      renderPrice += (price - renderPrice) * 0.16; // smooth the leading edge
+      const feed = getFeedState();
+      const price = feed.price;
+
+      if (price === null) {
+        drawNotice(
+          feed.status === "down" ? "BTC/USD FEED UNREACHABLE" : "CONNECTING TO BTC/USD…",
+          feed.status === "down" ? "no exchange reachable from this network" : "waiting for the first real trade"
+        );
+        return;
+      }
+
+      const fresh = feed.lastTickAt !== null && now - feed.lastTickAt <= STALE_SETTLE_MS;
+      const quotable = isQuotable(feed);
+      // Bands need *some* size to draw at all; before the vol estimate is warm
+      // we lay out on the clamp floor and simply refuse to quote.
+      ensureGrid(price, feed.vol ?? 0);
+
+      const src = getTicks();
+      const from = now - VP() - 2000;
+      const view: { t: number; p: number }[] = [];
+      for (let i = src.length - 1; i >= 0; i--) {
+        if (src[i].t < from) break;
+        view.push(src[i]);
+      }
+      view.reverse();
+      if (!view.length) view.push({ t: now, p: price });
+
+      updateRange(view, price);
+      ensureColumns(now, price, fresh);
+
+      if (now - lastReport > PRICE_REPORT_MS) {
+        lastReport = now;
+        onPriceRef.current(price);
+      }
 
       ctx.clearRect(0, 0, W, H);
       const nowX = W * NW();
-      const firstBand = bandForPrice(range.min) - 1;
-      const lastBand = bandForPrice(range.max) + 1;
+      const firstBand = bandForPrice(range!.min) - 1;
+      const lastBand = bandForPrice(range!.max) + 1;
 
-      const hover = mouse.inside ? cellAt(mouse.x, mouse.y, now) : null;
+      const hover = mouse.inside && quotable ? cellAt(mouse.x, mouse.y, now) : null;
 
       // ---- multiplier grid ----
-      ctx.font = "600 11px var(--font-mono, monospace)";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      for (const c of columns) {
-        if (c.resolved) continue;
-        const h = (c.t - now) / 1000;
-        if (h < MIN_BET_HORIZON) continue; // locked zone drawn separately
-        const x0 = xForTime(c.t, now);
-        const x1 = xForTime(c.t + COL_INTERVAL_MS, now);
-        if (x1 < nowX || x0 > W) continue;
-        const cw = x1 - x0;
-        for (let b = firstBand; b <= lastBand; b++) {
-          const yTop = yForPrice(bandLow(b + 1));
-          const yBot = yForPrice(bandLow(b));
-          const ch = yBot - yTop;
-          if (ch < 6) continue;
-          const lo = bandLow(b) - price;
-          const m = cellMultiplier(lo, lo + step, h, price);
-          if (m <= 0) continue;
-          const inten = multIntensity(m);
-          const [r, g, bl] = cellRGB(inten);
-          const isHover = hover && hover.colT === c.t && hover.band === b;
-          const a = 0.06 + inten * 0.6;
-          // high-multiplier cells glow + faintly pulse — the bigger the hotter
-          const glow = inten > 0.55;
-          if (glow) {
-            ctx.shadowColor = `rgba(${r},${g},${bl},0.9)`;
-            ctx.shadowBlur = (4 + inten * 14) * (0.85 + 0.15 * Math.sin(now / 240 + b));
-          }
-          ctx.fillStyle = isHover ? `rgba(${r},${g},${bl},0.95)` : `rgba(${r},${g},${bl},${a.toFixed(3)})`;
-          roundRect(ctx, x0 + 1.5, yTop + 1.5, cw - 3, ch - 3, 3);
-          ctx.fill();
-          ctx.shadowBlur = 0;
-          const hot = inten > 0.7;
-          ctx.strokeStyle = isHover ? "#ffffff" : `rgba(${r},${g},${bl},${(0.3 + inten * 0.65).toFixed(3)})`;
-          ctx.lineWidth = hot ? 2 : glow ? 1.4 : 1;
-          ctx.stroke();
-          // multiplier label — scales with the cell, big payouts get loud
-          if (ch > 10 && cw > 16) {
-            const fs = Math.max(12, Math.min(ch * 0.66, cw * 0.58, 46));
-            const mx = (x0 + x1) / 2;
-            const my = (yTop + yBot) / 2;
-            ctx.font = `${hot ? 900 : inten > 0.4 ? 700 : 600} ${fs.toFixed(0)}px ${hot ? "var(--font-display, sans-serif)" : "var(--font-mono, monospace)"}`;
-            if (hot && !isHover) {
-              // dark outline so the bright number pops, + glow
-              ctx.lineWidth = Math.max(2, fs * 0.14);
-              ctx.strokeStyle = "rgba(6,6,14,0.85)";
-              ctx.strokeText(fmtMult(m), mx, my);
-              ctx.shadowColor = `rgba(${r},${g},${bl},0.95)`;
-              ctx.shadowBlur = 8 + inten * 10;
+      // Only drawn when we can actually honour it. A grid of numbers we would
+      // refuse to take a bet on is worse than no grid.
+      if (quotable) {
+        const vol = feed.vol!;
+        ctx.font = "600 11px var(--font-mono, monospace)";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        for (const c of columns) {
+          if (c.resolved) continue;
+          const h = (c.t - now) / 1000;
+          if (h < MIN_BET_HORIZON) continue; // locked zone drawn separately
+          const x0 = xForTime(c.t, now);
+          const x1 = xForTime(c.t + COL_INTERVAL_MS, now);
+          if (x1 < nowX || x0 > W) continue;
+          const cw = x1 - x0;
+          for (let b = firstBand; b <= lastBand; b++) {
+            const yTop = yForPrice(bandLow(b + 1));
+            const yBot = yForPrice(bandLow(b));
+            const ch = yBot - yTop;
+            if (ch < 6) continue;
+            const lo = bandLow(b) - price;
+            const m = cellMultiplier(lo, lo + step, h, price, vol);
+            if (m <= 0) continue;
+            const inten = multIntensity(m);
+            const [r, g, bl] = cellRGB(inten);
+            const isHover = hover && hover.colT === c.t && hover.band === b;
+            const a = 0.06 + inten * 0.6;
+            // high-multiplier cells glow + faintly pulse — the bigger the hotter
+            const glow = inten > 0.55;
+            if (glow) {
+              ctx.shadowColor = `rgba(${r},${g},${bl},0.9)`;
+              ctx.shadowBlur = (4 + inten * 14) * (0.85 + 0.15 * Math.sin(now / 240 + b));
             }
-            ctx.fillStyle = isHover ? "#06060e" : hot ? `rgb(255,${Math.round(245 - inten * 30)},${Math.round(210 - inten * 120)})` : `rgba(233,243,255,${(0.5 + inten * 0.5).toFixed(3)})`;
-            ctx.fillText(fmtMult(m), mx, my);
+            ctx.fillStyle = isHover ? `rgba(${r},${g},${bl},0.95)` : `rgba(${r},${g},${bl},${a.toFixed(3)})`;
+            roundRect(ctx, x0 + 1.5, yTop + 1.5, cw - 3, ch - 3, 3);
+            ctx.fill();
             ctx.shadowBlur = 0;
-            ctx.font = "600 11px var(--font-mono, monospace)";
+            const hot = inten > 0.7;
+            ctx.strokeStyle = isHover ? "#ffffff" : `rgba(${r},${g},${bl},${(0.3 + inten * 0.65).toFixed(3)})`;
+            ctx.lineWidth = hot ? 2 : glow ? 1.4 : 1;
+            ctx.stroke();
+            // multiplier label — scales with the cell, big payouts get loud
+            if (ch > 10 && cw > 16) {
+              const fs = Math.max(12, Math.min(ch * 0.66, cw * 0.58, 46));
+              const mx = (x0 + x1) / 2;
+              const my = (yTop + yBot) / 2;
+              ctx.font = `${hot ? 900 : inten > 0.4 ? 700 : 600} ${fs.toFixed(0)}px ${hot ? "var(--font-display, sans-serif)" : "var(--font-mono, monospace)"}`;
+              if (hot && !isHover) {
+                // dark outline so the bright number pops, + glow
+                ctx.lineWidth = Math.max(2, fs * 0.14);
+                ctx.strokeStyle = "rgba(6,6,14,0.85)";
+                ctx.strokeText(fmtMult(m), mx, my);
+                ctx.shadowColor = `rgba(${r},${g},${bl},0.95)`;
+                ctx.shadowBlur = 8 + inten * 10;
+              }
+              ctx.fillStyle = isHover ? "#06060e" : hot ? `rgb(255,${Math.round(245 - inten * 30)},${Math.round(210 - inten * 120)})` : `rgba(233,243,255,${(0.5 + inten * 0.5).toFixed(3)})`;
+              ctx.fillText(fmtMult(m), mx, my);
+              ctx.shadowBlur = 0;
+              ctx.font = "600 11px var(--font-mono, monospace)";
+            }
           }
         }
       }
 
-      // (locked-zone spectacle removed — cells under the bet horizon simply
-      // aren't drawn, leaving a clean gap before the bettable grid.)
-
       // ---- active bet markers ----
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
       ctx.font = "700 12px var(--font-display, sans-serif)";
       for (const bt of bets) {
         if (bt.status === "lost") continue;
@@ -474,12 +519,21 @@ export default function GameChart({
         }
       }
 
-      // ---- price line (neon green, Catmull-Rom-ish smoothing) ----
-      const lx = xForTime(now, now);
-      const ly = yForPrice(renderPrice);
+      // ---- price line: the real tick series, decimated to ~one point per pixel ----
       const pts: { x: number; y: number }[] = [];
-      for (const pt of history) pts.push({ x: xForTime(pt.t, now), y: yForPrice(pt.p) });
-      pts.push({ x: lx, y: ly }); // smoothed leading edge
+      for (const tk of view) {
+        const x = xForTime(tk.t, now);
+        const y = yForPrice(tk.p);
+        const prev = pts[pts.length - 1];
+        if (prev && x - prev.x < MIN_POINT_PX) {
+          prev.x = x; // keep the latest sample in this pixel column
+          prev.y = y;
+          continue;
+        }
+        pts.push({ x, y });
+      }
+      const lx = xForTime(now, now);
+      const ly = yForPrice(price);
       const amb = ambientRef.current;
       ctx.lineJoin = "round";
       ctx.lineCap = "round";
@@ -506,8 +560,8 @@ export default function GameChart({
           tracePath();
           ctx.stroke();
         } else {
-          ctx.strokeStyle = "#39ff14";
-          ctx.shadowColor = "rgba(57,255,20,0.7)";
+          ctx.strokeStyle = fresh ? "#39ff14" : "#8b93b8";
+          ctx.shadowColor = fresh ? "rgba(57,255,20,0.7)" : "rgba(139,147,184,0.5)";
           ctx.shadowBlur = 12;
           ctx.lineWidth = 2.2;
           tracePath();
@@ -515,14 +569,15 @@ export default function GameChart({
         }
       }
       ctx.shadowBlur = 0;
+      const headCol = fresh ? "#39ff14" : "#8b93b8";
       const pulse = 6 + 3 * Math.sin(now / 220);
-      ctx.strokeStyle = "rgba(57,255,20,0.5)";
+      ctx.strokeStyle = fresh ? "rgba(57,255,20,0.5)" : "rgba(139,147,184,0.4)";
       ctx.lineWidth = 1.5;
       ctx.beginPath();
       ctx.arc(lx, ly, pulse, 0, Math.PI * 2);
       ctx.stroke();
       ctx.fillStyle = "#eafff0";
-      ctx.shadowColor = "rgba(57,255,20,0.9)";
+      ctx.shadowColor = fresh ? "rgba(57,255,20,0.9)" : "rgba(139,147,184,0.6)";
       ctx.shadowBlur = 12;
       ctx.beginPath();
       ctx.arc(lx, ly, 4, 0, Math.PI * 2);
@@ -541,21 +596,40 @@ export default function GameChart({
       // ---- right price axis ----
       ctx.textAlign = "right";
       ctx.font = "500 10px var(--font-mono, monospace)";
-      const labelStep = niceStep((range.max - range.min) / 7);
+      const labelStep = niceStep((range!.max - range!.min) / 7);
       ctx.fillStyle = "rgba(139,147,184,0.7)";
-      for (let p = Math.ceil(range.min / labelStep) * labelStep; p <= range.max; p += labelStep) {
+      for (let p = Math.ceil(range!.min / labelStep) * labelStep; p <= range!.max; p += labelStep) {
         ctx.fillText(p.toFixed(2), W - 6, yForPrice(p));
       }
       // current price tag
-      ctx.fillStyle = "#39ff14";
-      ctx.shadowColor = "rgba(57,255,20,0.6)";
+      ctx.fillStyle = headCol;
+      ctx.shadowColor = fresh ? "rgba(57,255,20,0.6)" : "rgba(139,147,184,0.4)";
       ctx.shadowBlur = 10;
-      roundRect(ctx, W - 72, ly - 9, 68, 18, 3);
+      roundRect(ctx, W - 78, ly - 9, 74, 18, 3);
       ctx.fill();
       ctx.shadowBlur = 0;
       ctx.fillStyle = "#06060e";
       ctx.font = "700 11px var(--font-mono, monospace)";
       ctx.fillText(price.toFixed(2), W - 8, ly);
+
+      // ---- feed banner: say plainly when the game is not taking bets ----
+      if (!quotable && !amb) {
+        const msg =
+          feed.status === "stale" || feed.status === "down"
+            ? "FEED STALE — BETTING PAUSED"
+            : "MEASURING LIVE VOLATILITY…";
+        ctx.textAlign = "center";
+        ctx.font = "700 11px var(--font-mono, monospace)";
+        const wBox = ctx.measureText(msg).width + 24;
+        ctx.fillStyle = "rgba(6,6,14,0.85)";
+        roundRect(ctx, W / 2 - wBox / 2, plotTop + 6, wBox, 24, 3);
+        ctx.fill();
+        ctx.strokeStyle = "rgba(255,43,214,0.6)";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.fillStyle = "#ff2bd6";
+        ctx.fillText(msg, W / 2, plotTop + 18);
+      }
 
       // ---- floaters ----
       ctx.textAlign = "center";
@@ -639,20 +713,18 @@ export default function GameChart({
       for (let i = bets.length - 1; i >= 0; i--) {
         if (bets[i].status !== "live" && now - bets[i].bornAt > 6000) bets.splice(i, 1);
       }
-
-      raf = requestAnimationFrame(draw);
     }
 
     let raf = requestAnimationFrame(draw);
     return () => {
       cancelAnimationFrame(raf);
       ro.disconnect();
+      unsubscribe();
       canvas.removeEventListener("mousemove", onMove);
       canvas.removeEventListener("mouseleave", onLeave);
       canvas.removeEventListener("click", onClick);
       canvas.removeEventListener("wheel", onWheel);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (

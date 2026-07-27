@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "verify:vol": "tsx scripts/verify-vol.ts",
+    "verify:edge": "tsx scripts/verify-edge.ts"
   },
   "dependencies": {
     "@rainbow-me/rainbowkit": "^2.1.6",
@@ -27,6 +29,7 @@
     "autoprefixer": "^10.4.20",
     "postcss": "^8.4.45",
     "tailwindcss": "^3.4.10",
+    "tsx": "^4.19.2",
     "typescript": "^5.5.4"
   }
 }

@@ -9,6 +9,7 @@ import ConnectGate from "@/components/play/ConnectGate";
 import { usePlay } from "@/components/play/PlayProvider";
 import { useToast } from "@/components/ui/Toast";
 import { useLivePrice } from "@/lib/useLivePrice";
+import type { FeedState } from "@/lib/priceFeed";
 import { sfx } from "@/lib/sound";
 import { usdc, won } from "@/lib/money";
 
@@ -20,10 +21,10 @@ export default function TapTradingPage() {
   const { mode, balance, adjust } = usePlay();
   const real = mode === "real";
   const toast = useToast();
-  const btc = useLivePrice(); // real BTC/USD for the chart level
+  const feed = useLivePrice(); // real BTC/USD trades — the chart's only input
 
   const [bid, setBid] = useState(5);
-  const [price, setPrice] = useState(95000);
+  const [price, setPrice] = useState<number | null>(null);
   const [zoom, setZoom] = useState(1);
   const [stats, setStats] = useState({ live: 0, won: 0, profit: 0 });
 
@@ -81,8 +82,11 @@ export default function TapTradingPage() {
         <TapPanel price={price} bid={bid} onBid={setBid} />
 
         <main className="relative min-w-0 flex-1 bg-[#070710]">
-          <div className={`panel clip absolute left-4 top-3 z-10 px-3 py-1.5 font-mono text-[11px] tracking-wider ${real ? "text-magenta" : "text-cyan"}`}>
-            {real ? "◆ REAL — tKRW · off-chain · no signature" : "◆ DEMO — play money"}
+          <div className="absolute left-4 top-3 z-10 flex items-center gap-2">
+            <div className={`panel clip px-3 py-1.5 font-mono text-[11px] tracking-wider ${real ? "text-magenta" : "text-cyan"}`}>
+              {real ? "◆ REAL — tKRW · off-chain · no signature" : "◆ DEMO — play money"}
+            </div>
+            <FeedBadge feed={feed} />
           </div>
           <LiveFeed className="absolute bottom-4 left-3 top-12 z-10 hidden w-56 overflow-hidden md:block" />
 
@@ -109,11 +113,35 @@ export default function TapTradingPage() {
             onBalanceDelta={onBalanceDelta}
             onBet={onBet}
             getBalance={getBalance}
-            getRealPrice={btc.getPrice}
           />
         </main>
       </div>
     </ConnectGate>
+  );
+}
+
+const SOURCE_LABEL: Record<string, string> = {
+  binance: "BINANCE",
+  coinbase: "COINBASE",
+  "coinbase-rest": "COINBASE (REST)",
+  "binance-rest": "BINANCE (REST)",
+};
+
+// Where the price comes from and how volatile it currently is. The odds are
+// derived from that volatility, so it belongs on screen rather than buried.
+function FeedBadge({ feed }: { feed: FeedState }) {
+  const live = feed.status === "live";
+  const cls = live ? "text-lime" : feed.status === "connecting" ? "text-muted" : "text-magenta";
+  const label = feed.source ? SOURCE_LABEL[feed.source] ?? feed.source.toUpperCase() : "…";
+  // realized vol per √second → annualised, the unit people actually read
+  const annual = feed.vol === null ? null : feed.vol * Math.sqrt(365 * 24 * 3600) * 100;
+
+  return (
+    <div className={`panel clip flex items-center gap-2 px-3 py-1.5 font-mono text-[11px] tracking-wider ${cls}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${live ? "bg-lime animate-flicker" : "bg-magenta"}`} />
+      {feed.status === "connecting" ? "CONNECTING" : feed.status === "live" ? label : feed.status.toUpperCase()}
+      {annual !== null && <span className="tabular text-faint">σ {annual.toFixed(0)}%</span>}
+    </div>
   );
 }
 

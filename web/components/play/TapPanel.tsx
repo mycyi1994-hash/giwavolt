@@ -14,7 +14,7 @@ import { useVaultDeposit } from "@/lib/useVaultDeposit";
 const DEMO_PRESETS = [1, 5, 10, 100];
 const REAL_PRESETS = [10_000, 50_000, 100_000, 500_000]; // tKRW
 
-export default function TapPanel({ price, bid, onBid }: { price: number; bid: number; onBid: (n: number) => void }) {
+export default function TapPanel({ price, bid, onBid }: { price: number | null; bid: number; onBid: (n: number) => void }) {
   const { mode, balance, adjust, resetDemo, realReady, claimReal, withdrawReal, refreshReal } = usePlay();
   const { requireWallet } = useWalletGate();
   const vaultDeposit = useVaultDeposit();
@@ -92,7 +92,9 @@ export default function TapPanel({ price, bid, onBid }: { price: number; bid: nu
           <span className="grid h-6 w-6 place-items-center rounded-full bg-[#f7931a] text-[10px] text-white">₿</span>
           BTC / USD
         </span>
-        <span className="tabular text-[15px] font-bold text-lime neon-lime">{price.toFixed(2)}</span>
+        <span className={`tabular text-[15px] font-bold ${price === null ? "text-faint" : "text-lime neon-lime"}`}>
+          {price === null ? "—" : price.toFixed(2)}
+        </span>
       </div>
 
       {/* balance */}
