@@ -102,6 +102,46 @@ console.log("\nout-of-range volatility is refused, not clamped:");
   if (tooSlow.vol !== null) fails++;
 }
 
+console.log("\na market that STOPS must stop the game, not coast on an old reading:");
+{
+  // The bug this reproduces: ten minutes of real movement followed by a flat
+  // stretch. The slow window still reads a healthy volatility; the fast window
+  // can't measure a frozen price at all. Treating that null as "no opinion"
+  // quoted 5x-50x cells on a line going nowhere — the centre cell won every
+  // time, which is a money printer pointed at the house.
+  const moving = makeTicks(0.0001, 540, 12);
+  const lastP = moving[moving.length - 1].p;
+  const lastT = moving[moving.length - 1].t;
+  const frozen: Tick[] = [];
+  for (let i = 1; i <= 90 * 12; i++) frozen.push({ t: lastT + i * 83, p: lastP });
+  const series = [...moving, ...frozen];
+
+  const slow = measureVol(series, 600);
+  const priced = measureVolForPricing(series);
+  console.log(`  slow window still reads ${slow.vol ? slow.vol.toExponential(2) : "null"} (${slow.vol ? (slow.vol * Math.sqrt(365 * 24 * 3600) * 100).toFixed(0) + "%/yr" : "-"})`);
+  const refused = priced.vol === null;
+  console.log(`  ${refused ? "PASS" : "FAIL"} pricing ${refused ? `refuses (${priced.reason})` : `quotes ${priced.vol!.toExponential(2)} — MONEY PRINTER`}`);
+  if (!refused) fails++;
+
+  // a near-frozen market (moving, but far too slowly) must refuse too.
+  // Built by continuing from the same clock, so the two segments form one series.
+  const crawl: Tick[] = [];
+  let cp = lastP;
+  for (let i = 1; i <= 90 * 12; i++) {
+    cp *= Math.exp(VOL_MIN * 0.2 * Math.sqrt(0.083) * gauss());
+    crawl.push({ t: lastT + i * 83, p: cp });
+  }
+  const p2 = measureVolForPricing([...moving, ...crawl]);
+  console.log(`  ${p2.vol === null ? "PASS" : "FAIL"} a crawling market ${p2.vol === null ? `refuses (${p2.reason})` : "still quotes"}`);
+  if (p2.vol !== null) fails++;
+
+  // but a plain gap in the feed is NOT the same thing — the slow window stands
+  const warming = makeTicks(0.0001, 300, 12).filter((tk) => tk.t < Date.now() - 200_000);
+  const p3 = measureVolForPricing(warming);
+  console.log(`  ${p3.vol !== null || p3.reason === "insufficient-data" ? "PASS" : "FAIL"} a gap in the feed is treated as absence, not stillness (${p3.reason})`);
+  if (p3.vol === null && p3.reason !== "insufficient-data") fails++;
+}
+
 console.log("\npricing volatility follows a spike rather than lagging it:");
 {
   // Volatility clusters, and a player picks their moment. A slow window that

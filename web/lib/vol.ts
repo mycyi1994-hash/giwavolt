@@ -84,44 +84,75 @@ function realizedVariance(src: Tick[], gridSec: number): { v: number; n: number 
  * the subtraction is mostly sampling error. Rather than quote odds off that, we
  * return null and the game stops taking bets until the measurement is sound.
  */
-export function measureVol(src: Tick[], windowSec = VOL_WINDOW_SEC): { vol: number | null; samples: number } {
-  if (src.length < 2) return { vol: null, samples: 0 };
+/**
+ * Why an estimate came back empty. The distinction is load-bearing: "I haven't
+ * seen enough yet" and "I looked, and the price has stopped moving" are both a
+ * null volatility, but only one of them may be papered over with an older
+ * reading.
+ */
+export type VolReason = "ok" | "insufficient-data" | "noise-dominated" | "too-slow" | "too-fast";
+export type VolResult = { vol: number | null; samples: number; reason: VolReason };
+
+export function measureVol(src: Tick[], windowSec = VOL_WINDOW_SEC): VolResult {
+  const none = (reason: VolReason, samples = 0): VolResult => ({ vol: null, samples, reason });
+
+  if (src.length < 2) return none("insufficient-data");
   const cutoff = src[src.length - 1].t - windowSec * 1000;
   const win = src.filter((tk) => tk.t >= cutoff);
-  if (win.length < 2) return { vol: null, samples: 0 };
+  if (win.length < 2) return none("insufficient-data");
 
   const fine = realizedVariance(win, VOL_FINE_SEC);
-  if (fine.n < VOL_MIN_SAMPLES || fine.v <= 0) return { vol: null, samples: fine.n };
+  if (fine.n < VOL_MIN_SAMPLES) return none("insufficient-data", fine.n);
+  // Enough samples and no variance at all means the price never changed — a
+  // dead market or a stuck feed. Either way it is measured, not unknown.
+  if (fine.v <= 0) return none("too-slow", fine.n);
 
   const coarse = realizedVariance(win, VOL_COARSE_SEC);
-  if (coarse.n < VOL_MIN_COARSE) return { vol: null, samples: fine.n };
+  if (coarse.n < VOL_MIN_COARSE) return none("insufficient-data", fine.n);
 
   // c = 2·noise variance, from V(Δ₁) − V(Δ₂) = c·(1/Δ₁ − 1/Δ₂)
   const c = Math.max(0, (fine.v - coarse.v) / (1 / VOL_FINE_SEC - 1 / VOL_COARSE_SEC));
   const variance = fine.v - c / VOL_FINE_SEC;
 
-  if (!(variance > 0) || variance / fine.v < VOL_MIN_SNR) return { vol: null, samples: fine.n };
+  if (!(variance > 0) || variance / fine.v < VOL_MIN_SNR) return none("noise-dominated", fine.n);
 
   const vol = Math.sqrt(variance);
-  if (vol < VOL_MIN || vol > VOL_MAX) return { vol: null, samples: fine.n };
-  return { vol, samples: fine.n };
+  if (vol < VOL_MIN) return none("too-slow", fine.n);
+  if (vol > VOL_MAX) return none("too-fast", fine.n);
+  return { vol, samples: fine.n, reason: "ok" };
 }
 
 /**
  * The volatility to actually quote odds with.
  *
- * Takes the larger of the slow and fast estimates. The asymmetry is deliberate:
- * over-estimating volatility costs the house a little edge, while
- * under-estimating it prices the grid's far cells far too generously — and a
- * player can choose *when* to bet, so any window that lags a volatility spike
- * is a window they can wait for. Erring upward removes that option.
+ * Two windows, and the rule between them is asymmetric on purpose, because the
+ * player chooses when to bet and the house does not.
+ *
+ * If the fast window reads HIGHER, it wins. Volatility clusters, so a slow
+ * window that hasn't caught up to a spike is a window a player can wait for.
+ *
+ * If the fast window says the market has STOPPED, we quote nothing. This is the
+ * case that used to be silently swallowed: a frozen price makes the short
+ * window unmeasurable, and treating that as "no opinion" fell back on a
+ * ten-minute-old reading that still had movement in it. The grid then paid
+ * 5×–50× on a line that wasn't going anywhere, and the centre cell won every
+ * time. A still market is a measurement, not a gap — and it means stop.
+ *
+ * Only genuine absence of data (warm-up, a hole in the feed) lets the slow
+ * window stand alone.
  */
-export function measureVolForPricing(src: Tick[]): { vol: number | null; samples: number } {
+export function measureVolForPricing(src: Tick[]): VolResult {
   const slow = measureVol(src, VOL_WINDOW_SEC);
   if (slow.vol === null) return slow;
+
   const fast = measureVol(src, VOL_SHORT_SEC);
-  const vol = fast.vol === null ? slow.vol : Math.max(slow.vol, fast.vol);
+  if (fast.vol === null) {
+    if (fast.reason === "insufficient-data") return slow;
+    return { vol: null, samples: fast.samples, reason: fast.reason };
+  }
+
+  const vol = Math.max(slow.vol, fast.vol);
   // The blend can exceed the ceiling even when both inputs sat inside it.
-  if (vol > VOL_MAX) return { vol: null, samples: slow.samples };
-  return { vol, samples: slow.samples };
+  if (vol > VOL_MAX) return { vol: null, samples: slow.samples, reason: "too-fast" };
+  return { vol, samples: slow.samples, reason: "ok" };
 }

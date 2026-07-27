@@ -349,17 +349,14 @@ export default function GameChart({
         return;
       }
 
-      // toggle-cancel an existing live bet on this cell
-      const existing = bets.find((b) => b.status === "live" && b.colT === cell.colT && b.band === cell.band);
-      if (existing) {
-        existing.status = "lost"; // mark inactive; will be culled
-        existing.bornAt = -1; // cull immediately
-        bets.splice(bets.indexOf(existing), 1);
-        onBalanceDeltaRef.current(existing.stake);
-        onBetRef.current({ stake: existing.stake, mult: existing.mult, status: "cancel" });
-        floaters.push({ x: xForTime(cell.colT, now), y: yForPrice(bandCenter(cell.band)), text: "CANCEL", born: now, kind: "cancel" });
-        return;
-      }
+      // A placed bet stands. Re-tapping a cell used to refund it in full, with
+      // no restriction on when — so you could rest a bet 46s out, watch 36s of
+      // price, and take the stake back whenever it was heading the wrong way.
+      // Keeping the winners and cancelling the losers is a free option worth
+      // more than the house edge. REAL mode has no cancel either (there is no
+      // such endpoint), so this also stops DEMO teaching a mechanic the real
+      // game doesn't have.
+      if (bets.some((b) => b.status === "live" && b.colT === cell.colT && b.band === cell.band)) return;
 
       // place a new bet — only ≥ MIN_BET_HORIZON_SEC seconds out, on an offered cell
       const h = (cell.colT - now) / 1000;
@@ -695,10 +692,19 @@ export default function GameChart({
 
       // ---- feed banner: say plainly when the game is not taking bets ----
       if (!quotable && !amb) {
+        // Say which of these it is. "Measuring…" while the market is simply
+        // standing still reads as a loading state that never finishes, when in
+        // fact the game has made a decision and is waiting on the market.
         const msg =
           feed.status === "stale" || feed.status === "down"
             ? "FEED STALE — BETTING PAUSED"
-            : "MEASURING LIVE VOLATILITY…";
+            : feed.volReason === "too-slow"
+              ? "MARKET TOO STILL TO PRICE — BETTING PAUSED"
+              : feed.volReason === "noise-dominated"
+                ? "SPREAD TOO WIDE TO PRICE — BETTING PAUSED"
+                : feed.volReason === "too-fast"
+                  ? "MARKET TOO VOLATILE — BETTING PAUSED"
+                  : "MEASURING LIVE VOLATILITY…";
         ctx.textAlign = "center";
         ctx.font = "700 11px var(--font-mono, monospace)";
         const wBox = ctx.measureText(msg).width + 24;

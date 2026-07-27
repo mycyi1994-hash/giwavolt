@@ -23,7 +23,7 @@
 //     volatility against a real price series would silently break the house
 //     edge, so the two have to move together.
 
-import { measureVolForPricing, VOL_WINDOW_SEC, type Tick } from "@/lib/vol";
+import { measureVolForPricing, VOL_WINDOW_SEC, type Tick, type VolReason } from "@/lib/vol";
 
 export type { Tick };
 export type FeedStatus = "connecting" | "live" | "stale" | "down";
@@ -50,6 +50,8 @@ export type FeedState = {
   /** realized volatility per √second, measured from real ticks; null until warm */
   vol: number | null;
   volSamples: number;
+  /** why `vol` is null — a still market and a cold start are not the same thing */
+  volReason: VolReason;
   /** true once real historical ticks have been merged in */
   historyReady: boolean;
 };
@@ -71,6 +73,7 @@ let state: FeedState = {
   lastTickAt: null,
   vol: null,
   volSamples: 0,
+  volReason: "insufficient-data",
   historyReady: false,
 };
 
@@ -100,8 +103,8 @@ function recompute(force = false) {
   const now = Date.now();
   if (!force && now - lastVolAt < 1000) return;
   lastVolAt = now;
-  const { vol, samples } = measureVolForPricing(ticks);
-  state = { ...state, vol, volSamples: samples };
+  const { vol, samples, reason } = measureVolForPricing(ticks);
+  state = { ...state, vol, volSamples: samples, volReason: reason };
 }
 
 // ---- tick intake --------------------------------------------------------
