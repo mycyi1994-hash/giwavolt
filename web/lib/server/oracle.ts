@@ -92,12 +92,12 @@ async function rememberBars(ticks: Tick[], source: string): Promise<void> {
   }
 }
 
-async function barFromStore(ts: number): Promise<{ price: number; source: string; at: number } | null> {
+async function barFromStore(ts: number, venue: string): Promise<{ price: number; source: string; at: number } | null> {
   try {
     const db = getSql();
     const rows = await db`
       select ts, price, source from price_bars
-       where ts <= ${ts} and ts >= ${ts - SETTLE_TOLERANCE_MS}
+       where ts <= ${ts} and ts >= ${ts - SETTLE_TOLERANCE_MS} and source = ${venue}
        order by ts desc limit 1`;
     if (!rows.length) return null;
     return { price: Number(rows[0].price), source: String(rows[0].source), at: Number(rows[0].ts) };
@@ -182,31 +182,38 @@ export async function quote(): Promise<Quote | null> {
 export type Settlement = { price: number; source: string; at: number };
 
 /**
- * The traded price at `ts`, for settling a bet.
+ * The traded price at `ts`, for settling a bet quoted on `venue`.
+ *
+ * The venue is not a preference, it is part of the bet. A band is a few tens of
+ * dollars wide and Binance's BTCUSDT sits a few dollars from Coinbase's BTC-USD,
+ * so settling on the other exchange would judge the bet against a market it was
+ * never priced on — enough to flip an outcome near a band edge. If our venue
+ * has no price for that instant we return null and the bet stays open, rather
+ * than resolving it on the wrong number.
  *
  * Our own record of the bar comes first; the exchange is the fallback and also
  * how that record gets filled. Either way the answer is a published number the
  * player can verify against the same public endpoint.
  */
-export async function priceAt(ts: number): Promise<Settlement | null> {
-  const stored = await barFromStore(ts);
+export async function priceAt(ts: number, venue = "binance"): Promise<Settlement | null> {
+  const stored = await barFromStore(ts, venue);
   if (stored) return stored;
 
-  const bin = parseBinanceKlines(
-    await getJson(`${BINANCE_KLINES}&startTime=${ts - 4_000}&endTime=${ts + 2_000}&limit=10`)
-  );
-  if (bin.length) void rememberBars(bin, "binance");
-  const binFill = pickAt(bin, ts);
-  if (binFill) return { price: binFill.p, source: "binance", at: binFill.t };
+  if (venue === "binance") {
+    const bin = parseBinanceKlines(
+      await getJson(`${BINANCE_KLINES}&startTime=${ts - 4_000}&endTime=${ts + 2_000}&limit=10`)
+    );
+    if (bin.length) void rememberBars(bin, "binance");
+    const fill = pickAt(bin, ts);
+    return fill ? { price: fill.p, source: "binance", at: fill.t } : null;
+  }
 
   // Coinbase only exposes recent trades, so this works for prompt settlement
   // and correctly fails for a bet nobody settled for a long time.
   const cb = parseCoinbaseTrades(await getJson(COINBASE_TRADES));
   if (cb.length) void rememberBars(cb, "coinbase");
-  const cbFill = pickAt(cb, ts);
-  if (cbFill) return { price: cbFill.p, source: "coinbase", at: cbFill.t };
-
-  return null;
+  const fill = pickAt(cb, ts);
+  return fill ? { price: fill.p, source: "coinbase", at: fill.t } : null;
 }
 
 /** Last trade at or before `ts`, provided it isn't further back than tolerance. */

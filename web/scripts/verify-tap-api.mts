@@ -160,9 +160,9 @@ console.log("\n4. outcomes match the exchange's published price");
   } else {
     const lo = Math.floor(truth.p / step) * step;
     const winner = await db`insert into tap_bets (address, stake, mult, band_lo, band_hi, col_t, quote_price, quote_vol, quote_source)
-      values (${ADDR.toLowerCase()}, 1000, 5, ${lo}, ${lo + step}, ${colT}, ${q.price}, ${q.vol}, 'test') returning id`;
+      values (${ADDR.toLowerCase()}, 1000, 5, ${lo}, ${lo + step}, ${colT}, ${q.price}, ${q.vol}, 'binance') returning id`;
     const loser = await db`insert into tap_bets (address, stake, mult, band_lo, band_hi, col_t, quote_price, quote_vol, quote_source)
-      values (${ADDR.toLowerCase()}, 1000, 5, ${lo + step * 8}, ${lo + step * 9}, ${colT}, ${q.price}, ${q.vol}, 'test') returning id`;
+      values (${ADDR.toLowerCase()}, 1000, 5, ${lo + step * 8}, ${lo + step * 9}, ${colT}, ${q.price}, ${q.vol}, 'binance') returning id`;
 
     const before = Number((await db`select balance from accounts where address=${ADDR.toLowerCase()}`)[0].balance);
     const r = await post(settle, { address: ADDR });
@@ -194,7 +194,7 @@ console.log("\n5. settling twice does not pay twice");
   const truth = barAt(colT)!;
   const lo = Math.floor(truth.p / step) * step;
   await db`insert into tap_bets (address, stake, mult, band_lo, band_hi, col_t, quote_price, quote_vol, quote_source)
-           values (${ADDR.toLowerCase()}, 1000, 5, ${lo}, ${lo + step}, ${colT}, ${q.price}, ${q.vol}, 'test')`;
+           values (${ADDR.toLowerCase()}, 1000, 5, ${lo}, ${lo + step}, ${colT}, ${q.price}, ${q.vol}, 'binance')`;
   const bal0 = Number((await db`select balance from accounts where address=${ADDR.toLowerCase()}`)[0].balance);
   const [r1, r2, r3] = await Promise.all([post(settle, { address: ADDR }), post(settle, { address: ADDR }), post(settle, { address: ADDR })]);
   const bal1 = Number((await db`select balance from accounts where address=${ADDR.toLowerCase()}`)[0].balance);
@@ -215,7 +215,7 @@ console.log("\n6. a void is not a free option the player can trigger on demand")
 
   const lo = Math.floor(q.price / step) * step;
   const bet = await db`insert into tap_bets (address, stake, mult, band_lo, band_hi, col_t, quote_price, quote_vol, quote_source)
-    values (${ADDR.toLowerCase()}, 1000, 5, ${lo}, ${lo + step}, ${colT}, ${q.price}, ${q.vol}, 'test') returning id`;
+    values (${ADDR.toLowerCase()}, 1000, 5, ${lo}, ${lo + step}, ${colT}, ${q.price}, ${q.vol}, 'binance') returning id`;
   const id = String(bet[0].id);
   const before = Number((await db`select balance from accounts where address=${ADDR.toLowerCase()}`)[0].balance);
 
@@ -248,13 +248,13 @@ console.log("\n6b. a settlement price we already recorded survives an exchange o
   // an unresolvable bet by pushing the exchange into rate-limiting.
   const colT = Math.floor((Date.now() - 8_000) / COL_INTERVAL_MS) * COL_INTERVAL_MS;
   const truth = barAt(colT)!;
-  await db`insert into price_bars (ts, price, source) values (${truth.t}, ${truth.p}, 'test')
+  await db`insert into price_bars (ts, price, source) values (${truth.t}, ${truth.p}, 'binance')
            on conflict (ts) do nothing`;
   blackout = { from: colT - 60_000, to: colT + 60_000 }; // exchange refuses everything
 
   const lo = Math.floor(truth.p / step) * step;
   const bet = await db`insert into tap_bets (address, stake, mult, band_lo, band_hi, col_t, quote_price, quote_vol, quote_source)
-    values (${ADDR.toLowerCase()}, 1000, 5, ${lo}, ${lo + step}, ${colT}, ${q.price}, ${q.vol}, 'test') returning id`;
+    values (${ADDR.toLowerCase()}, 1000, 5, ${lo}, ${lo + step}, ${colT}, ${q.price}, ${q.vol}, 'binance') returning id`;
   const r = await post(settle, { address: ADDR });
   const s = r.json.settled.find((x: any) => x.id === String(bet[0].id));
   ok(s?.status === "won", "settled from the stored bar with the exchange down", s ? `status ${s.status}` : "not settled");
@@ -267,7 +267,7 @@ console.log("\n7. a due bet with a fetchable price is never voided early");
   const colT = Math.floor((Date.now() - 2000) / COL_INTERVAL_MS) * COL_INTERVAL_MS;
   const lo = Math.floor(q.price / step) * step;
   await db`insert into tap_bets (address, stake, mult, band_lo, band_hi, col_t, quote_price, quote_vol, quote_source)
-           values (${ADDR.toLowerCase()}, 1000, 5, ${lo}, ${lo + step}, ${colT}, ${q.price}, ${q.vol}, 'test')`;
+           values (${ADDR.toLowerCase()}, 1000, 5, ${lo}, ${lo + step}, ${colT}, ${q.price}, ${q.vol}, 'binance')`;
   const r = await post(settle, { address: ADDR });
   const voids = r.json.settled.filter((s: any) => s.status === "void");
   ok(voids.length === 0, "resolved normally instead of voiding", `${r.json.settled.length} settled`);

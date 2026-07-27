@@ -27,7 +27,19 @@ import { measureVolForPricing, VOL_WINDOW_SEC, type Tick } from "@/lib/vol";
 
 export type { Tick };
 export type FeedStatus = "connecting" | "live" | "stale" | "down";
-export type FeedSource = "binance" | "coinbase" | "coinbase-rest" | "binance-rest" | null;
+export type Venue = "binance" | "coinbase";
+export type FeedSource = Venue | "coinbase-rest" | "binance-rest" | null;
+
+/** Which exchange a source belongs to, socket or REST. */
+export function venueOf(source: FeedSource): Venue | null {
+  if (!source) return null;
+  return source.startsWith("binance") ? "binance" : "coinbase";
+}
+
+// Binance quotes BTC against USDT and Coinbase against USD. They are not the
+// same number — the peg drifts — so the pair has to be labelled by whichever
+// venue actually won, or the screen claims a market it isn't showing.
+export const PAIR_LABEL: Record<Venue, string> = { binance: "BTC / USDT", coinbase: "BTC / USD" };
 
 export type FeedState = {
   status: FeedStatus;
@@ -203,36 +215,47 @@ function win(source: FeedSource) {
   void backfill(source);
 }
 
-// REST fallback — only used when neither socket can reach us (restrictive
-// networks, corporate proxies). Still real trade data, just lower resolution.
-async function pollRest() {
+const REST_URL: Record<Venue, string> = {
+  binance: "https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT",
+  coinbase: "https://api.exchange.coinbase.com/products/BTC-USD/ticker",
+};
+
+async function restPrice(venue: Venue): Promise<number | null> {
   try {
-    const r = await fetch("https://api.exchange.coinbase.com/products/BTC-USD/ticker");
+    const r = await fetch(REST_URL[venue]);
     const j = await r.json();
     const p = parseFloat(j?.price);
-    if (p > 0) {
-      if (!state.source) {
-        state = { ...state, source: "coinbase-rest" };
-        void backfill("coinbase-rest");
-      }
-      return pushTick(p, Date.now(), state.source);
-    }
+    return p > 0 ? p : null;
   } catch {
-    /* try the next venue */
+    return null;
   }
-  try {
-    const r = await fetch("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT");
-    const j = await r.json();
-    const p = parseFloat(j?.price);
-    if (p > 0) {
-      if (!state.source) {
-        state = { ...state, source: "binance-rest" };
-        void backfill("binance-rest");
-      }
-      return pushTick(p, Date.now(), state.source);
-    }
-  } catch {
-    /* nothing reachable this round */
+}
+
+// REST fallback — used when the socket can't reach us (restrictive networks,
+// corporate proxies) or has gone quiet. Still real trade data, just coarser.
+//
+// It polls the venue that is already ours and no other. Substituting the other
+// exchange here would be a silent venue switch mid-series: BTCUSDT and BTC-USD
+// sit a few dollars apart, which is a large fraction of one grid band, so the
+// line would jump and settled bets would be judged against a price from a
+// market the bet was never quoted on. If our venue is down, we publish nothing
+// and the feed goes stale — which pauses betting, correctly.
+async function pollRest() {
+  const active = venueOf(state.source);
+  if (active) {
+    const p = await restPrice(active);
+    if (p !== null) pushTick(p, Date.now(), state.source);
+    return;
+  }
+  // Nothing has claimed the feed yet, so whichever answers first may have it.
+  for (const venue of ["binance", "coinbase"] as Venue[]) {
+    const p = await restPrice(venue);
+    if (p === null) continue;
+    const source: FeedSource = `${venue}-rest`;
+    state = { ...state, source };
+    void backfill(source);
+    pushTick(p, Date.now(), source);
+    return;
   }
 }
 

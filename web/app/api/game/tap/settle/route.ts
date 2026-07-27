@@ -14,6 +14,7 @@ type Row = {
   band_lo: string;
   band_hi: string;
   col_t: string;
+  quote_source: string;
   settle_attempts: number;
   first_attempt_at: string | null;
 };
@@ -39,7 +40,7 @@ export async function POST(req: Request) {
   const now = Date.now();
 
   const due = (await db`
-    select id, stake, mult, band_lo, band_hi, col_t, settle_attempts, first_attempt_at
+    select id, stake, mult, band_lo, band_hi, col_t, quote_source, settle_attempts, first_attempt_at
       from tap_bets
      where address=${a} and status='live' and col_t <= ${now}
      order by col_t asc
@@ -54,7 +55,9 @@ export async function POST(req: Request) {
     const lo = Number(row.band_lo);
     const hi = Number(row.band_hi);
 
-    const fill = await priceAt(colT);
+    // Settle on the venue the bet was quoted on — the two exchanges differ by
+    // a meaningful fraction of one band.
+    const fill = await priceAt(colT, row.quote_source);
 
     if (!fill) {
       // Record the failure. A void refunds the stake, and the player chooses

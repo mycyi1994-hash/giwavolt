@@ -10,7 +10,7 @@ import ConnectGate from "@/components/play/ConnectGate";
 import { usePlay } from "@/components/play/PlayProvider";
 import { useToast } from "@/components/ui/Toast";
 import { useLivePrice } from "@/lib/useLivePrice";
-import type { FeedState } from "@/lib/priceFeed";
+import { PAIR_LABEL, venueOf, type FeedState } from "@/lib/priceFeed";
 import { sfx } from "@/lib/sound";
 import { usdc, won } from "@/lib/money";
 
@@ -151,10 +151,14 @@ export default function TapTradingPage() {
 
   const clampZoom = (z: number) => Math.max(0.6, Math.min(2.6, z));
 
+  // Whichever venue won names the pair — Binance quotes USDT, Coinbase USD.
+  const venue = venueOf(feed.source);
+  const pair = venue ? PAIR_LABEL[venue] : "BTC";
+
   return (
     <ConnectGate title="TAP TRADING">
       <div className="flex h-full flex-col md:flex-row">
-        <TapPanel price={price} bid={bid} onBid={setBid} />
+        <TapPanel price={price} pair={pair} bid={bid} onBid={setBid} />
 
         <main className="relative min-w-0 flex-1 bg-[#070710]">
           <div className="absolute left-4 top-3 z-10 flex items-center gap-2">
@@ -218,6 +222,7 @@ function FeedBadge({ feed }: { feed: FeedState }) {
     <div className={`panel clip flex items-center gap-2 px-3 py-1.5 font-mono text-[11px] tracking-wider ${cls}`}>
       <span className={`h-1.5 w-1.5 rounded-full ${live ? "bg-lime animate-flicker" : "bg-magenta"}`} />
       {feed.status === "connecting" ? "CONNECTING" : feed.status === "live" ? label : feed.status.toUpperCase()}
+      {feed.source && <span className="text-faint">{PAIR_LABEL[venueOf(feed.source)!]}</span>}
       {annual !== null && <span className="tabular text-faint">σ {annual.toFixed(0)}%</span>}
     </div>
   );
