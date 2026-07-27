@@ -49,6 +49,55 @@ follows: the edge is exact *given* the volatility estimate, and a real estimate
 carries error — the old simulated chart could claim exactness only because it
 generated the price with the very volatility it priced against.
 
+## Two markets
+
+Tap Trading runs on either of two markets, picked from the toolbar. They sit
+behind one interface that answers a single question — *what is σ of the price at
+time T?* — which is why the grid, the chart and the settlement logic needed to
+learn nothing about the second one.
+
+| | **BTC** | **VOLT** |
+| --- | --- | --- |
+| Price | live exchange trades | generated here, from a seed |
+| σ | **estimated** from ticks | **declared** on a public schedule |
+| House edge | 6.5–6.8% (estimate carries error) | exactly 7.00% |
+| Goes quiet? | yes — and then betting pauses | never |
+| Needs network | yes | no |
+| REAL money | yes | **no — DEMO only** |
+
+**VOLT** exists for three reasons. DEMO has to work with no network, and the
+exchange sockets are geo-blocked in some regions — a play-money demo stuck on
+"CONNECTING…" is worse than no demo. A quiet real market pauses betting,
+correctly but boringly. And because we *declare* the volatility instead of
+measuring it, the grid prices against the true process and the edge is exact.
+
+The interesting part isn't that it's more volatile. The grid is scale-invariant
+in σ: doubling a *constant* volatility widens every band by the same factor and
+leaves the multiplier ladder — and the entire feel of the game — unchanged. So
+the drama comes from σ *varying*, on two incommensurable periods, swinging about
+7× between calm and storm. The board visibly breathes with it:
+
+```
+t(s)     σ/yr    band  cells  ladder
+0        456%   $1.239    14  9.7× … 33.4×
+24       714%   $1.348    14  9.7× … 33.4×
+48       255%   $0.539    14  9.7× … 33.4×
+72       143%   $0.634    14  9.7× … 33.4×
+```
+
+Same ladder throughout — the difficulty knob is the band height, not the payout.
+That schedule is public and deterministic, which is exactly what keeps the
+pricing exact: with a known σ(t) the terminal distribution over any horizon is
+still Gaussian with variance ∫σ²dt, so we compute it rather than estimate it.
+The player knows how violent the next thirty seconds will be. They still don't
+know which way.
+
+VOLT is **DEMO only**, and that's a security boundary rather than a preference:
+the browser generates the path, so the browser can read the seed and know the
+future. Harmless for play money, disqualifying for real. Promoting it to REAL
+would mean driving the path from a server-held hash chain, revealed link by
+link — the same commit-reveal shape Death Fun already uses.
+
 ## REAL mode is settled by the server
 
 In DEMO mode the browser settles its own bets; there's no money to protect. In

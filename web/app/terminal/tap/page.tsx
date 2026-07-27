@@ -9,8 +9,7 @@ import LiveFeed from "@/components/play/LiveFeed";
 import ConnectGate from "@/components/play/ConnectGate";
 import { usePlay } from "@/components/play/PlayProvider";
 import { useToast } from "@/components/ui/Toast";
-import { useLivePrice } from "@/lib/useLivePrice";
-import { PAIR_LABEL, venueOf, type FeedState } from "@/lib/priceFeed";
+import { MARKETS, MARKET_ORDER, useMarketSnapshot, type MarketId, type MarketSnapshot } from "@/lib/markets";
 import { sfx } from "@/lib/sound";
 import { usdc, won } from "@/lib/money";
 
@@ -19,15 +18,28 @@ const fmtAmt = (real: boolean, n: number) => (real ? won(n) : usdc(n));
 const fmtPnl = (real: boolean, n: number) => `${n >= 0 ? "+" : "−"}${fmtAmt(real, Math.abs(n))}`;
 
 export default function TapTradingPage() {
-  const { mode, balance, adjust, setBalance } = usePlay();
+  const { mode, setMode, balance, adjust, setBalance } = usePlay();
   const { address } = useAccount();
   const real = mode === "real";
   const toast = useToast();
-  const feed = useLivePrice(); // real BTC/USD trades — the chart's only input
+
+  const [market, setMarket] = useState<MarketId>("btc");
+  const snap = useMarketSnapshot(market);
 
   const [bid, setBid] = useState(5);
   const [price, setPrice] = useState<number | null>(null);
+  const [step, setStep] = useState(0);
   const [zoom, setZoom] = useState(1);
+
+  // VOLT's path is generated in this browser, so this browser could read its
+  // seed and know the future. That is fine for play money and disqualifying for
+  // real money, so the two can never be selected together.
+  useEffect(() => {
+    if (!MARKETS[market].realMoney && real) setMode("demo");
+  }, [market, real, setMode]);
+  useEffect(() => {
+    if (real && !MARKETS[market].realMoney) setMarket("btc");
+  }, [real, market]);
   const [stats, setStats] = useState({ live: 0, won: 0, profit: 0 });
 
   // reset stats and pick a sensible default stake when switching modes
@@ -151,21 +163,20 @@ export default function TapTradingPage() {
 
   const clampZoom = (z: number) => Math.max(0.6, Math.min(2.6, z));
 
-  // Whichever venue won names the pair — Binance quotes USDT, Coinbase USD.
-  const venue = venueOf(feed.source);
-  const pair = venue ? PAIR_LABEL[venue] : "BTC";
+  const pair = snap.pair;
 
   return (
     <ConnectGate title="TAP TRADING">
       <div className="flex h-full flex-col md:flex-row">
-        <TapPanel price={price} pair={pair} bid={bid} onBid={setBid} />
+        <TapPanel price={price} pair={pair} step={step} bid={bid} onBid={setBid} />
 
         <main className="relative min-w-0 flex-1 bg-[#070710]">
           <div className="absolute left-4 top-3 z-10 flex items-center gap-2">
             <div className={`panel clip px-3 py-1.5 font-mono text-[11px] tracking-wider ${real ? "text-magenta" : "text-cyan"}`}>
               {real ? "◆ REAL — tKRW · off-chain · no signature" : "◆ DEMO — play money"}
             </div>
-            <FeedBadge feed={feed} />
+            <MarketPicker market={market} onPick={setMarket} real={real} />
+            <FeedBadge snap={snap} />
           </div>
           <LiveFeed className="absolute bottom-4 left-3 top-12 z-10 hidden w-56 overflow-hidden md:block" />
 
@@ -186,10 +197,12 @@ export default function TapTradingPage() {
           <GameChart
             bidSize={bid}
             zoom={zoom}
+            market={market}
             realMode={real}
             unit={real ? "tKRW" : "USDC"}
             onZoom={(f) => setZoom((z) => clampZoom(z * f))}
             onPrice={setPrice}
+            onGrid={(g) => setStep(g.step)}
             onBalanceDelta={onBalanceDelta}
             onBet={onBet}
             placeServerBet={placeServerBet}
@@ -202,28 +215,48 @@ export default function TapTradingPage() {
   );
 }
 
-const SOURCE_LABEL: Record<string, string> = {
-  binance: "BINANCE",
-  coinbase: "COINBASE",
-  "coinbase-rest": "COINBASE (REST)",
-  "binance-rest": "BINANCE (REST)",
-};
-
-// Where the price comes from and how volatile it currently is. The odds are
-// derived from that volatility, so it belongs on screen rather than buried.
-function FeedBadge({ feed }: { feed: FeedState }) {
-  const live = feed.status === "live";
-  const cls = live ? "text-lime" : feed.status === "connecting" ? "text-muted" : "text-magenta";
-  const label = feed.source ? SOURCE_LABEL[feed.source] ?? feed.source.toUpperCase() : "…";
+// Which market is running, and how fast it is moving. The odds are derived
+// from that volatility, so it belongs on screen rather than buried.
+function FeedBadge({ snap }: { snap: MarketSnapshot }) {
+  const live = snap.reason === "ok";
+  const cls = live ? "text-lime" : snap.reason === "connecting" ? "text-muted" : "text-magenta";
   // realized vol per √second → annualised, the unit people actually read
-  const annual = feed.vol === null ? null : feed.vol * Math.sqrt(365 * 24 * 3600) * 100;
+  const annual = snap.vol === null ? null : snap.vol * Math.sqrt(365 * 24 * 3600) * 100;
 
   return (
     <div className={`panel clip flex items-center gap-2 px-3 py-1.5 font-mono text-[11px] tracking-wider ${cls}`}>
       <span className={`h-1.5 w-1.5 rounded-full ${live ? "bg-lime animate-flicker" : "bg-magenta"}`} />
-      {feed.status === "connecting" ? "CONNECTING" : feed.status === "live" ? label : feed.status.toUpperCase()}
-      {feed.source && <span className="text-faint">{PAIR_LABEL[venueOf(feed.source)!]}</span>}
+      {snap.source ?? "CONNECTING"}
+      <span className="text-faint">{snap.pair}</span>
       {annual !== null && <span className="tabular text-faint">σ {annual.toFixed(0)}%</span>}
+    </div>
+  );
+}
+
+// The grid is scale-invariant in volatility: a quiet market gets narrower bands
+// and the very same multiplier ladder. That is why a flat-looking line is still
+// a real game — but only if you can see the scale changing, hence this.
+function MarketPicker({ market, onPick, real }: { market: MarketId; onPick: (m: MarketId) => void; real: boolean }) {
+  return (
+    <div className="panel clip flex items-center overflow-hidden">
+      {MARKET_ORDER.map((id) => {
+        const m = MARKETS[id];
+        const active = id === market;
+        const blocked = real && !m.realMoney;
+        return (
+          <button
+            key={id}
+            onClick={() => !blocked && onPick(id)}
+            disabled={blocked}
+            title={blocked ? "REAL money runs on BTC only" : m.blurb}
+            className={`px-3 py-1.5 font-display text-[11px] font-bold tracking-widest transition ${
+              active ? "bg-cyan/20 text-cyan" : blocked ? "text-faint/40" : "text-muted hover:text-txt"
+            }`}
+          >
+            {m.label}
+          </button>
+        );
+      })}
     </div>
   );
 }

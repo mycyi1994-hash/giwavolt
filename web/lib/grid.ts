@@ -53,7 +53,7 @@ export function clampVol(vol: number): number {
 
 /** Height of one grid band in price units, sized to current realized vol. */
 export function bandStep(price: number, vol: number): number {
-  return price * clampVol(vol) * Math.sqrt(H_REF_SEC) * BAND_SIGMA_FRACTION;
+  return bandStepAt(price * clampVol(vol) * Math.sqrt(H_REF_SEC));
 }
 
 /**
@@ -92,13 +92,36 @@ function Phi(z: number): number {
   return 0.5 * (1 + erf(z / Math.SQRT2));
 }
 
-// Probability that (price+lo) ≤ terminal < (price+hi); lo=-Infinity / hi=Infinity
-// select the catch-all tails.
-export function bandProbability(lo: number, hi: number, hSeconds: number, price: number, vol: number): number {
-  const sigma = price * clampVol(vol) * Math.sqrt(Math.max(hSeconds, 0.4));
+// The model only ever needs one number: σ of the terminal price, in price
+// units. How that σ was arrived at is the market's business — estimated from
+// ticks for BTC, integrated from a declared schedule for VOLT — and keeping the
+// two apart is what lets a synthetic market be priced exactly while a real one
+// is priced from a measurement.
+
+/** Probability that (price+lo) ≤ terminal < (price+hi), given σ in price units. */
+export function bandProbabilityAt(lo: number, hi: number, sigma: number): number {
+  if (!(sigma > 0)) return 1e-12;
   const pLo = lo === -Infinity ? 0 : Phi(lo / sigma);
   const pHi = hi === Infinity ? 1 : Phi(hi / sigma);
   return Math.max(pHi - pLo, 1e-12);
+}
+
+/** Cell multiplier from σ directly; 0 when the cell isn't offered. */
+export function cellMultiplierAt(lo: number, hi: number, sigma: number): number {
+  const m = (1 - HOUSE_EDGE) / bandProbabilityAt(lo, hi, sigma);
+  if (m <= 1.001 || m > MAX_MULT) return 0;
+  return m;
+}
+
+/** Band height from σ at the reference horizon. */
+export function bandStepAt(sigmaRef: number): number {
+  return sigmaRef * BAND_SIGMA_FRACTION;
+}
+
+// Probability that (price+lo) ≤ terminal < (price+hi); lo=-Infinity / hi=Infinity
+// select the catch-all tails.
+export function bandProbability(lo: number, hi: number, hSeconds: number, price: number, vol: number): number {
+  return bandProbabilityAt(lo, hi, price * clampVol(vol) * Math.sqrt(Math.max(hSeconds, 0.4)));
 }
 
 // Returns the cell's multiplier, or 0 if the cell is not offered. We never
@@ -107,10 +130,7 @@ export function bandProbability(lo: number, hi: number, hSeconds: number, price:
 // (≤1x) and too-unlikely cells (>MAX_MULT) are simply not offered, so every
 // offered cell pays exactly (1 - HOUSE_EDGE)/prob and the edge is exactly 7%.
 export function cellMultiplier(lo: number, hi: number, hSeconds: number, price: number, vol: number): number {
-  const prob = bandProbability(lo, hi, hSeconds, price, vol);
-  const m = (1 - HOUSE_EDGE) / prob;
-  if (m <= 1.001 || m > MAX_MULT) return 0;
-  return m;
+  return cellMultiplierAt(lo, hi, price * clampVol(vol) * Math.sqrt(Math.max(hSeconds, 0.4)));
 }
 
 // 0..1 visual intensity for a multiplier — log-scaled so 10× already glows and

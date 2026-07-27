@@ -17,12 +17,15 @@ const REAL_PRESETS = [10_000, 50_000, 100_000, 500_000]; // tKRW
 export default function TapPanel({
   price,
   pair,
+  step,
   bid,
   onBid,
 }: {
   price: number | null;
   /** Named by the venue that won the feed — the two quote different pairs. */
   pair: string;
+  /** Height of one grid band, in price units. */
+  step: number;
   bid: number;
   onBid: (n: number) => void;
 }) {
@@ -107,6 +110,19 @@ export default function TapPanel({
           {price === null ? "—" : price.toFixed(2)}
         </span>
       </div>
+
+      {/* The band height is the game's real difficulty dial. It shrinks in a
+          quiet market and widens in a violent one, which is why a flat-looking
+          line still plays the same — without this the scale change is invisible
+          and the multipliers look unearned. */}
+      {step > 0 && (
+        <div className="-mt-3 flex items-center justify-between font-mono text-[10px] text-faint">
+          <span className="tracking-[0.2em]">CELL HEIGHT</span>
+          <span className="tabular text-muted">
+            ${step < 1 ? step.toFixed(3) : step.toFixed(2)}
+          </span>
+        </div>
+      )}
 
       {/* balance */}
       {real ? (

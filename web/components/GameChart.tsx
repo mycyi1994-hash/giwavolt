@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { cellMultiplier, multIntensity, bandStep } from "@/lib/grid";
-import { getFeedState, getTicks, isQuotable, subscribeFeed } from "@/lib/priceFeed";
+import { cellMultiplierAt, multIntensity, bandStepAt } from "@/lib/grid";
+import { MARKETS, type MarketId } from "@/lib/markets";
 import { COL_INTERVAL_MS, MIN_BET_HORIZON_SEC } from "@/lib/tap";
 import { mult as fmtMult } from "@/lib/format";
 
@@ -23,6 +23,7 @@ const STALE_SETTLE_MS = 6_000; // no fresh tick by settlement → void, don't gu
 const GRID_REBASE_TOLERANCE = 0.15; // re-size bands once vol has moved this much
 const PRICE_REPORT_MS = 100; // throttle for the onPrice callback
 const MIN_POINT_PX = 0.6; // decimate the tick line to roughly one point per pixel
+const H_REF_SEC = 28; // horizon the band height is sized at (matches lib/grid)
 
 export type BetStatus = "live" | "won" | "lost" | "cancel";
 
@@ -86,6 +87,7 @@ function cellRGB(t: number): [number, number, number] {
 export default function GameChart({
   bidSize,
   zoom = 1,
+  market = "btc",
   realMode = false,
   ambient = false,
   unit = "USDC",
@@ -93,12 +95,15 @@ export default function GameChart({
   onBalanceDelta,
   onBet,
   onZoom,
+  onGrid,
   placeServerBet,
   drainSettlements,
   getBalance,
 }: {
   bidSize: number;
   zoom?: number;
+  /** Which market to draw and price against. */
+  market?: MarketId;
   realMode?: boolean;
   ambient?: boolean;
   unit?: string;
@@ -106,6 +111,8 @@ export default function GameChart({
   onBalanceDelta: (d: number) => void;
   onBet: (b: { stake: number; mult: number; status: BetStatus }) => void;
   onZoom?: (factor: number) => void;
+  /** Reports the live band height so the UI can show what a cell is worth. */
+  onGrid?: (g: { step: number }) => void;
   /** REAL mode: open a position server-side. Resolves null if it was rejected. */
   placeServerBet?: (b: PlacedBet) => Promise<PlaceResult>;
   /** REAL mode: collect outcomes the server has decided since the last call. */
@@ -120,6 +127,10 @@ export default function GameChart({
   zoomRef.current = zoom;
   const onZoomRef = useRef(onZoom);
   onZoomRef.current = onZoom;
+  const onGridRef = useRef(onGrid);
+  onGridRef.current = onGrid;
+  const marketRef = useRef(market);
+  marketRef.current = market;
   const realModeRef = useRef(realMode);
   realModeRef.current = realMode;
   const ambientRef = useRef(ambient);
@@ -144,9 +155,10 @@ export default function GameChart({
     const wrap = wrapRef.current!;
     const ctx = canvas.getContext("2d")!;
 
-    // Mounting the chart keeps the shared feed connected; the render loop reads
-    // it directly rather than through React so ticks never cost a re-render.
-    const unsubscribe = subscribeFeed(() => {});
+    // Keep the active market running. The render loop reads it directly rather
+    // than through React, so ticks never cost a re-render.
+    let stopMarket = MARKETS[marketRef.current].start();
+    let runningMarket = marketRef.current;
 
     // Grid geometry. Bands are absolute price levels: a cell you are looking at
     // is a real price range, and it stays put while a bet on it is live.
@@ -203,8 +215,8 @@ export default function GameChart({
 
     // Size the bands to current realized volatility. Only ever re-sized while
     // no bet is live, so a resting position never has the ground moved under it.
-    function ensureGrid(price: number, vol: number) {
-      const target = bandStep(price, vol);
+    function ensureGrid(price: number, sigmaRef: number) {
+      const target = bandStepAt(sigmaRef);
       if (!step) {
         step = target;
         anchor = Math.round(price / step) * step;
@@ -301,12 +313,12 @@ export default function GameChart({
     }
 
     function handleClick(px: number, py: number) {
-      const feed = getFeedState();
-      // No quotes unless the feed is live and the vol estimate is warm — an
-      // uncertain price is not something to take money against.
-      if (!isQuotable(feed) || ambientRef.current) return;
-      const price = feed.price!;
-      const vol = feed.vol!;
+      const mk = MARKETS[marketRef.current];
+      const snap = mk.snapshot();
+      // No quotes unless the market can price itself — an uncertain price is
+      // not something to take money against.
+      if (!snap.quotable || snap.price === null || ambientRef.current) return;
+      const price = snap.price;
       const now = Date.now();
       const cell = cellAt(px, py, now);
       if (!cell) return;
@@ -322,7 +334,9 @@ export default function GameChart({
         if (h < MIN_BET_HORIZON_SEC) return;
         const loAbs = bandLow(cell.band);
         const hiAbs = loAbs + step;
-        const m = cellMultiplier(loAbs - price, hiAbs - price, h, price, vol);
+        const sig = mk.sigma(price, now, cell.colT);
+        if (sig === null) return;
+        const m = cellMultiplierAt(loAbs - price, hiAbs - price, sig);
         if (m <= 0) return;
         const stake = bidRef.current;
         if (stake <= 0 || balanceRef.current() < stake) return;
@@ -361,8 +375,10 @@ export default function GameChart({
       // place a new bet — only ≥ MIN_BET_HORIZON_SEC seconds out, on an offered cell
       const h = (cell.colT - now) / 1000;
       if (h < MIN_BET_HORIZON_SEC) return;
+      const sigma = mk.sigma(price, now, cell.colT);
+      if (sigma === null) return;
       const lo = bandLow(cell.band) - price;
-      const m = cellMultiplier(lo, lo + step, h, price, vol);
+      const m = cellMultiplierAt(lo, lo + step, sigma);
       if (m <= 0) return;
       const stake = bidRef.current;
       if (stake <= 0 || balanceRef.current() < stake) return;
@@ -453,24 +469,43 @@ export default function GameChart({
     function draw() {
       raf = requestAnimationFrame(draw);
       const now = Date.now();
-      const feed = getFeedState();
-      const price = feed.price;
+      // Swap markets without remounting: stop the old one, start the new, and
+      // drop the grid so it re-sizes to the new price scale.
+      if (runningMarket !== marketRef.current) {
+        stopMarket();
+        runningMarket = marketRef.current;
+        stopMarket = MARKETS[runningMarket].start();
+        step = 0;
+        anchor = 0;
+        range = null;
+        columns.length = 0;
+        bets.length = 0;
+      }
+      const mk = MARKETS[runningMarket];
+      const snap = mk.snapshot();
+      const price = snap.price;
 
       if (price === null) {
         drawNotice(
-          feed.status === "down" ? "BTC/USD FEED UNREACHABLE" : "CONNECTING TO BTC/USD…",
-          feed.status === "down" ? "no exchange reachable from this network" : "waiting for the first real trade"
+          snap.reason === "stale" ? "FEED UNREACHABLE" : "CONNECTING TO THE MARKET…",
+          snap.reason === "stale" ? "no exchange reachable from this network" : "waiting for the first real trade"
         );
         return;
       }
 
-      const fresh = feed.lastTickAt !== null && now - feed.lastTickAt <= STALE_SETTLE_MS;
-      const quotable = isQuotable(feed);
-      // Bands need *some* size to draw at all; before the vol estimate is warm
-      // we lay out on the clamp floor and simply refuse to quote.
-      ensureGrid(price, feed.vol ?? 0);
+      const fresh = snap.fresh;
+      const quotable = snap.quotable;
+      // σ at the reference horizon sets the band height. Before a market can
+      // price itself we still need *some* geometry to draw on, so fall back to
+      // the last known step and simply refuse to quote.
+      const sigmaRef = mk.sigma(price, now, now + H_REF_SEC * 1000);
+      if (sigmaRef !== null) ensureGrid(price, sigmaRef);
+      if (!step) {
+        drawNotice("MEASURING THE MARKET…", "no volatility estimate yet");
+        return;
+      }
 
-      const src = getTicks();
+      const src = snap.ticks;
       const from = now - VP() - 2000;
       const view: { t: number; p: number }[] = [];
       for (let i = src.length - 1; i >= 0; i--) {
@@ -487,6 +522,7 @@ export default function GameChart({
       if (now - lastReport > PRICE_REPORT_MS) {
         lastReport = now;
         onPriceRef.current(price);
+        onGridRef.current?.({ step });
       }
 
       ctx.clearRect(0, 0, W, H);
@@ -500,7 +536,6 @@ export default function GameChart({
       // Only drawn when we can actually honour it. A grid of numbers we would
       // refuse to take a bet on is worse than no grid.
       if (quotable) {
-        const vol = feed.vol!;
         ctx.font = "600 11px var(--font-mono, monospace)";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
@@ -512,13 +547,16 @@ export default function GameChart({
           const x1 = xForTime(c.t + COL_INTERVAL_MS, now);
           if (x1 < nowX || x0 > W) continue;
           const cw = x1 - x0;
+          // σ is per-column: on VOLT it integrates a volatility schedule that
+          // changes across the board, so it cannot be hoisted out of the loop.
+          const colSigma = mk.sigma(price, now, c.t);
           for (let b = firstBand; b <= lastBand; b++) {
             const yTop = yForPrice(bandLow(b + 1));
             const yBot = yForPrice(bandLow(b));
             const ch = yBot - yTop;
             if (ch < 6) continue;
             const lo = bandLow(b) - price;
-            const m = cellMultiplier(lo, lo + step, h, price, vol);
+            const m = colSigma === null ? 0 : cellMultiplierAt(lo, lo + step, colSigma);
             if (m <= 0) continue;
             const inten = multIntensity(m);
             const [r, g, bl] = cellRGB(inten);
@@ -696,13 +734,13 @@ export default function GameChart({
         // standing still reads as a loading state that never finishes, when in
         // fact the game has made a decision and is waiting on the market.
         const msg =
-          feed.status === "stale" || feed.status === "down"
+          snap.reason === "stale"
             ? "FEED STALE — BETTING PAUSED"
-            : feed.volReason === "too-slow"
+            : snap.reason === "still"
               ? "MARKET TOO STILL TO PRICE — BETTING PAUSED"
-              : feed.volReason === "noise-dominated"
+              : snap.reason === "noisy"
                 ? "SPREAD TOO WIDE TO PRICE — BETTING PAUSED"
-                : feed.volReason === "too-fast"
+                : snap.reason === "wild"
                   ? "MARKET TOO VOLATILE — BETTING PAUSED"
                   : "MEASURING LIVE VOLATILITY…";
         ctx.textAlign = "center";
@@ -806,7 +844,7 @@ export default function GameChart({
     return () => {
       cancelAnimationFrame(raf);
       ro.disconnect();
-      unsubscribe();
+      stopMarket();
       canvas.removeEventListener("mousemove", onMove);
       canvas.removeEventListener("mouseleave", onLeave);
       canvas.removeEventListener("click", onClick);

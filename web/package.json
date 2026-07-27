@@ -9,6 +9,7 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "verify:vol": "tsx scripts/verify-vol.ts",
+    "verify:synth": "tsx scripts/verify-synth.ts",
     "verify:edge": "tsx scripts/verify-edge.ts",
     "verify:tap-api": "tsx scripts/verify-tap-api.mts",
     "verify:death-api": "tsx scripts/verify-death-api.mts",
