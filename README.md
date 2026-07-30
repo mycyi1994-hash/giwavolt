@@ -43,7 +43,7 @@ would go straight into the payouts. So the estimator samples on two grids and
 subtracts the noise term, and when too little signal survives the subtraction it
 reports nothing and the game stops quoting until the measurement is sound.
 
-At a realistic BTC spread the realised edge lands at **6.7–6.8%** against a 7%
+At a realistic BTC spread the realised edge lands at **6.5–6.8%** against a 7%
 target, with median volatility error near 2%. Note the honest caveat that
 follows: the edge is exact *given* the volatility estimate, and a real estimate
 carries error — the old simulated chart could claim exactness only because it
