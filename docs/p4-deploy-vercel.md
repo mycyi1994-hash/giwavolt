@@ -32,12 +32,20 @@ it). Grab a free one at https://cloud．reown．com (formerly WalletConnect Clou
 
 ## 3. Environment Variables (Vercel → Project → Settings → Environment Variables)
 
-Required:
+**For a DEMO-only deployment, nothing is required.** Deploy with no variables
+at all and both games are playable — DEMO is entirely client-side, and the
+REAL button stays disabled because `NEXT_PUBLIC_REAL_MODE` is unset. This is
+the right shape for a public demo link.
+
+To turn REAL on, all four together:
 ```
+NEXT_PUBLIC_REAL_MODE        = on
 DATABASE_URL                 = postgresql://postgres.<ref>:<pw>@...pooler.supabase.com:6543/postgres
 NEXT_PUBLIC_TESTKRW_ADDRESS  = 0x616cb26e3Af3895DEAc5A53f760ECEFaEF4e78bc
 FAUCET_PRIVATE_KEY           = 0x...   (server-only; do NOT prefix NEXT_PUBLIC)
 ```
+Setting `NEXT_PUBLIC_REAL_MODE=on` without the other three re-creates the bug
+it exists to prevent: an enabled button over a ledger that has no database.
 Recommended:
 ```
 NEXT_PUBLIC_WC_PROJECT_ID    = <from step 1>
