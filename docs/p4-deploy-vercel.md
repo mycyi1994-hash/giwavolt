@@ -27,8 +27,33 @@ it). Grab a free one at https://cloud．reown．com (formerly WalletConnect Clou
    repo root. Click *Edit* and pick it.
 4. Framework: **Next.js** (auto-detected). Leave build/install as-is (vercel.json
    already sets `npm install --legacy-peer-deps`).
-5. Set the production branch to the branch you're deploying (Project →
-   Settings → Git → Production Branch), or merge to `main` first.
+5. Production branch: Vercel follows the repo's default branch, so a fresh
+   import of this repo already tracks `main` and there is nothing to set.
+
+### Re-pointing an existing project at this repo
+
+If a Vercel project is already wired to another repo (or to this one at its old
+`game/web` path), three settings have to move together. They are NOT all in one
+place, and two of them are not where older guides say:
+
+| Setting | Where it actually is |
+| --- | --- |
+| Connected Git Repository | Settings → **Git** |
+| Root Directory | Settings → **Build and Deployment** (not General) |
+| Production Branch | Settings → **Environments → Production** (not Git) |
+
+Set the repo first: swapping it can reset Root Directory, so fix that after.
+A newly created repo usually won't appear in the picker until the Vercel GitHub
+App is granted access to it — the "Adjust GitHub App Permissions" link on that
+screen.
+
+There is no Deploy button in Settings. Redeploy lives in the **Deployments**
+tab, on a row's `...` menu — but after swapping repos the rows are still the
+*old* repo's commits, so redeploying one rebuilds the wrong tree. Push a commit
+to `main` instead and let the webhook fire.
+
+Confirm which branch is live on the project Overview: "To update your
+Production Deployment, push to the `…` branch."
 
 ## 3. Environment Variables (Vercel → Project → Settings → Environment Variables)
 
