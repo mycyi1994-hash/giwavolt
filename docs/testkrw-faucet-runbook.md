@@ -20,7 +20,7 @@ Pieces:
 - `app/api/account/{balance,claim,adjust,withdraw}/route.ts` — the endpoints.
 - `components/play/PlayProvider.tsx` — REAL balance = server ledger; `adjust()`
   routes real deltas to the server. Every game uses this, so they all work.
-- `game/contracts/src/TestKRW.sol` — the real tKRW token (only used for withdraw).
+- `contracts/src/TestKRW.sol` — the real tKRW token (only used for withdraw).
 
 > **SECURITY (demo):** settlement is client-reported, so it's cheatable. This
 > proves the no-signature flow on testnet; real money needs server-authoritative
@@ -28,7 +28,7 @@ Pieces:
 
 ## Setup
 
-You already deployed `TestKRW`. You only need two env vars in `game/web/.env.local`:
+You already deployed `TestKRW`. You only need two env vars in `web/.env.local`:
 
 ```
 NEXT_PUBLIC_TESTKRW_ADDRESS=0x...   # your tKRW token (for withdrawals)

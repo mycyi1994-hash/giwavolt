@@ -18,10 +18,10 @@ own balance.
 ## Setup
 
 1. Create a free Postgres at [supabase.com](https://supabase.com) (or Neon).
-2. In the Supabase **SQL editor**, paste & run `game/web/db/schema.sql`.
+2. In the Supabase **SQL editor**, paste & run `web/db/schema.sql`.
 3. Get the connection string: top **Connect** button → **Direct** tab →
    **Transaction pooler** (port 6543). Replace `[YOUR-PASSWORD]`.
-4. Put it in `game/web/.env.local`:
+4. Put it in `web/.env.local`:
    ```
    DATABASE_URL=postgresql://...pooler.supabase.com:6543/postgres
    ```

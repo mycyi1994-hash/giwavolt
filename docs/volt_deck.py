@@ -2,13 +2,14 @@
 """VOLT — on-chain crypto arcade. Introduction deck (English) → PDF.
 
 Brand kit (palette, fonts, primitives) lives in deck_brand.py; see its header
-for the one-time font setup. Then: python3 game/docs/volt_deck.py
+for the one-time font setup. Then: python3 docs/volt_deck.py
 """
+import os
 from reportlab.pdfgen import canvas
 from deck_brand import *  # noqa: F403 — the brand kit is meant to be ambient
 
 # =========================================================================
-c = canvas.Canvas("/home/user/ProjectGIWA/VOLT-Introduction.pdf", pagesize=(W, H))
+c = canvas.Canvas(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "VOLT-Introduction.pdf"), pagesize=(W, H))
 
 # ---- 1. COVER -----------------------------------------------------------
 bg(c)
@@ -215,4 +216,4 @@ tracked(c, W/2, 120, "yourdomain.xyz   ·   @volt   ·   hello@volt.xyz", FB, 13
 c.showPage()
 
 c.save()
-print("OK ->", "/home/user/ProjectGIWA/VOLT-Introduction.pdf")
+print("OK ->", os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "VOLT-Introduction.pdf"))

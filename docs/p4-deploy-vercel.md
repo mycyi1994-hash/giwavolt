@@ -22,8 +22,9 @@ it). Grab a free one at https://cloud．reown．com (formerly WalletConnect Clou
 ## 2. Import the repo into Vercel
 
 1. https://vercel.com → sign in with GitHub → **Add New… → Project**.
-2. Import `mycyi1994-hash/projectgiwa`.
-3. **Root Directory: `game/web`** ← critical (monorepo). Click *Edit* and pick it.
+2. Import `mycyi1994-hash/giwavolt`.
+3. **Root Directory: `web`** ← critical; the Next app is not at the
+   repo root. Click *Edit* and pick it.
 4. Framework: **Next.js** (auto-detected). Leave build/install as-is (vercel.json
    already sets `npm install --legacy-peer-deps`).
 5. Set the production branch to the branch you're deploying (Project →
@@ -63,7 +64,7 @@ OPERATOR_PRIVATE_KEY          = 0x...   (server-only)
   run. Check Vercel → Deployments → Functions logs.
 - **Wallet won't connect**: add `NEXT_PUBLIC_WC_PROJECT_ID`, or just use MetaMask
   (injected works without it).
-- **Build fails**: ensure Root Directory = `game/web`.
+- **Build fails**: ensure Root Directory = `web`.
 - Redeploy after changing env vars (Vercel → Deployments → Redeploy).
 
 ## After deploy

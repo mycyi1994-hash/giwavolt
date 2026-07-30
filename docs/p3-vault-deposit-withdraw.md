@@ -20,7 +20,7 @@ time a player signs; withdrawals are relayed by the operator (no user signature)
 ### 1. Deploy the vault (needs a little ETH for gas)
 
 ```bash
-cd game/contracts            # .env has PRIVATE_KEY (your test wallet)
+cd contracts            # .env has PRIVATE_KEY (your test wallet)
 npm run compile
 # operator defaults to the deployer; seed some bankroll so winnings can be paid
 BANKROLL_TKRW=10000000 npm run deploy:vault
@@ -32,7 +32,7 @@ automatically, or set it in the env.)
 
 ### 2. Configure the web app
 
-`game/web/.env.local`:
+`web/.env.local`:
 ```
 NEXT_PUBLIC_GAMEVAULT_ADDRESS=0x...        # from step 1
 OPERATOR_PRIVATE_KEY=0x...                 # same key as the deployer/operator (server-only)

@@ -1,6 +1,6 @@
 # shots — IR 덱에 들어가는 실제 실행 화면
 
-목업이 아닙니다. `game/web`을 띄우고 Playwright로 찍은 그대로이며,
+목업이 아닙니다. `web`을 띄우고 Playwright로 찍은 그대로이며,
 `volt_ir_deck.py`가 여기서 읽어 씁니다.
 
 | 파일 | 무엇 | 쓰이는 곳 |

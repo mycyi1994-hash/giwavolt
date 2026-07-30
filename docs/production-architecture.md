@@ -38,7 +38,7 @@ Backend (Vercel API + Supabase)
 Giwa Sepolia: TestKRW (tKRW) + GameVault
 ```
 
-## GameVault (done — `game/contracts/src/GameVault.sol`)
+## GameVault (done — `contracts/src/GameVault.sol`)
 
 - `deposit(amount)` — pull tKRW (approve first); credits lifetime, emits `Deposited`.
 - `fundBankroll(amount)` — house tops up to cover net winnings.

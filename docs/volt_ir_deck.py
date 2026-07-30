@@ -2,9 +2,9 @@
 """VOLT — 투자 소개 자료 (IR Deck) → PDF.
 
 브랜드 킷(팔레트·폰트·드로잉 프리미티브)은 deck_brand.py에 있습니다. 폰트 최초
-설치 방법은 그 파일 헤더 참고. 이후: python3 game/docs/volt_ir_deck.py
+설치 방법은 그 파일 헤더 참고. 이후: python3 docs/volt_ir_deck.py
 
-이미지는 game/docs/shots/ 의 실제 앱 스크린샷입니다. 목업이 아니라 Playwright로
+이미지는 docs/shots/ 의 실제 앱 스크린샷입니다. 목업이 아니라 Playwright로
 띄운 실행 화면을 그대로 찍은 것이고, VOLT 마켓 화면은 외부 네트워크를 전부 차단한
 상태에서 찍었습니다.
 
@@ -17,7 +17,7 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.utils import ImageReader
 from deck_brand import *  # noqa: F403 — 브랜드 킷은 전역으로 쓰는 것을 전제로 함
 
-OUT = "/home/user/ProjectGIWA/VOLT-IR-Deck.pdf"
+OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "VOLT-IR-Deck.pdf")
 SHOTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "shots")
 
 # ---- 타이포: 한 단계씩 더 굵고 크게 --------------------------------------

@@ -3,8 +3,13 @@ node_modules/
 .env.local
 .DS_Store
 
-# 덱 폰트 — docs/deck_brand.py 헤더의 설치 방법 참고
+# 덱 폰트 — docs/deck_brand.py 헤더의 설치 방법 참고 (설치하는 것이지 커밋하는 것이 아님)
 docs/fonts/
+
+# 덱 산출물. IR 덱은 대외비 표기가 있고 이 레포는 공개이므로,
+# docs/*.py 를 돌린 결과가 실수로 커밋되지 않게 막는다.
+/VOLT-IR-Deck.pdf
+/VOLT-Introduction.pdf
 
 # python bytecode
 __pycache__/

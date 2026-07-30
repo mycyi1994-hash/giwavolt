@@ -6,7 +6,7 @@ decks are hand-drawn with reportlab so they match the app's neon/cyberpunk
 look exactly rather than approximating it in a template.
 
 Fonts (gitignored). Regenerate once:
-  mkdir -p game/docs/fonts && cd game/docs/fonts
+  mkdir -p docs/fonts && cd docs/fonts
   curl -fsSL -o PretendardVariable.ttf \
     https://raw.githubusercontent.com/orioncactus/pretendard/main/packages/pretendard/dist/public/variable/PretendardVariable.ttf
   python3 - <<EOF
@@ -15,7 +15,7 @@ from fontTools.varLib.instancer import instantiateVariableFont
 for n,w in [("Medium",500),("Bold",700),("ExtraBold",800),("Black",900)]:
     f=ttLib.TTFont("PretendardVariable.ttf"); instantiateVariableFont(f,{"wght":w},inplace=True); f.save(f"Pretendard-{n}.ttf")
 EOF
-Then: pip install reportlab && python3 game/docs/<deck>.py
+Then: pip install reportlab && python3 docs/<deck>.py
 """
 from reportlab.pdfgen import canvas
 from reportlab.lib.colors import HexColor, Color

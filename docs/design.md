@@ -103,10 +103,10 @@ npx hardhat run scripts/e2e.ts --network hardhat
 
 ## Status
 
-- ✅ `SlideGame.sol` + unit tests (`game/contracts`)
+- ✅ `SlideGame.sol` + unit tests (`contracts`)
 - ✅ 7% house-edge multiplier model, shared by web + round builder
 - ✅ On-chain e2e: full lifecycle over many paths, edge verified (`scripts/e2e.ts`)
-- ✅ Web UI/UX, playable in client-side **demo mode** (`game/web`)
+- ✅ Web UI/UX, playable in client-side **demo mode** (`web`)
 - ✅ Wallet connect (RainbowKit + wagmi, Giwa Sepolia)
 - ⏳ Oracle/round bot: open rounds, post Upbit prices per column, settle bets
 - ⏳ Wire the web tap → on-chain `placeBet`/`settleBet` transactions
