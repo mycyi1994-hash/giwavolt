@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useAccount } from "wagmi";
 import type { Mode, DeathSession } from "@/lib/types";
+import { REAL_ENABLED } from "@/lib/realMode";
 
 const DEMO_START = 1000; // USDC of play money (client-side only)
 
@@ -33,7 +34,11 @@ const round2 = (n: number) => Math.max(0, Math.round(n * 100) / 100);
 
 export function PlayProvider({ children }: { children: React.ReactNode }) {
   const { address } = useAccount();
-  const [mode, setMode] = useState<Mode>("demo");
+  const [mode, setModeState] = useState<Mode>("demo");
+  // REAL is unreachable unless the deployment declares a backend. Clamping
+  // here rather than only in the toggle covers the other way in: a stale
+  // localStorage entry from a deployment where REAL *was* enabled.
+  const setMode = useCallback((m: Mode) => setModeState(REAL_ENABLED ? m : "demo"), []);
   const [balance, setBal] = useState<Record<Mode, number>>({ demo: DEMO_START, real: 0 });
   const [death, setDeath] = useState<DeathSession | null>(null);
 
