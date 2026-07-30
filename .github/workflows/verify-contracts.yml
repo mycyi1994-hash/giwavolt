@@ -1,0 +1,68 @@
+# Publish contract source to Giwa's Blockscout, from a button in the browser.
+#
+# Verification uploads source — it does not sign anything — so this needs no
+# private key and no secrets. That is the whole reason it can live in CI:
+# deploying would need a funded key, verifying does not.
+#
+# Run it from the Actions tab: "Verify contracts on Blockscout" → Run workflow.
+name: Verify contracts on Blockscout
+
+on:
+  workflow_dispatch:
+    inputs:
+      testkrw:
+        description: "TestKRW address (blank to skip)"
+        required: false
+        default: "0x616cb26e3Af3895DEAc5A53f760ECEFaEF4e78bc"
+      vault:
+        description: "GameVault address (blank to skip)"
+        required: false
+        default: ""
+      operator:
+        description: "GameVault operator address — required only when verifying a vault"
+        required: false
+        default: ""
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: contracts/package-lock.json
+
+      - name: Install
+        working-directory: contracts
+        run: npm ci
+
+      # Compile first so a source/bytecode mismatch shows up as a compile error
+      # here rather than as an opaque rejection from the explorer.
+      - name: Compile
+        working-directory: contracts
+        run: npm run compile
+
+      - name: Verify TestKRW
+        if: inputs.testkrw != ''
+        working-directory: contracts
+        env:
+          TESTKRW_ADDRESS: ${{ inputs.testkrw }}
+        run: npm run verify:testkrw
+
+      - name: Verify GameVault
+        if: inputs.vault != ''
+        working-directory: contracts
+        env:
+          GAMEVAULT_ADDRESS: ${{ inputs.vault }}
+          TESTKRW_ADDRESS: ${{ inputs.testkrw }}
+          OPERATOR_ADDRESS: ${{ inputs.operator }}
+        run: npm run verify:vault
+
+      - name: Where to look
+        if: always()
+        run: |
+          echo "Explorer: https://sepolia-explorer.giwa.io/address/${{ inputs.testkrw }}"
+          echo "Verified contracts show source and Read/Write tabs instead of raw bytecode."
