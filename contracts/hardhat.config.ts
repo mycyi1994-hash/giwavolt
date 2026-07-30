@@ -41,6 +41,30 @@ const config: HardhatUserConfig = {
       accounts: PRIVATE_KEY ? [PRIVATE_KEY] : [],
     },
   },
+  // Source verification on Giwa's Blockscout. Deploying is not enough — an
+  // unverified address shows bytecode only, so nobody can read what they are
+  // depositing into, and the settings below have to match how it was compiled
+  // (0.8.24, optimizer on, 200 runs) or verification is rejected.
+  //
+  //   npm run verify:testkrw
+  //   npm run verify:vault
+  //
+  // Blockscout ignores the API key but hardhat-verify requires the field to be
+  // non-empty, hence the placeholder.
+  etherscan: {
+    apiKey: { giwaSepolia: process.env.BLOCKSCOUT_API_KEY ?? "blockscout" },
+    customChains: [
+      {
+        network: "giwaSepolia",
+        chainId: 91342,
+        urls: {
+          apiURL: process.env.GIWA_EXPLORER_API ?? "https://sepolia-explorer.giwa.io/api",
+          browserURL: process.env.GIWA_EXPLORER_URL ?? "https://sepolia-explorer.giwa.io",
+        },
+      },
+    ],
+  },
+  sourcify: { enabled: false },
 };
 
 export default config;

@@ -217,7 +217,14 @@ npm run dev                        # http://localhost:3000
 cd contracts                        # .env: PRIVATE_KEY=0x... (funded test wallet)
 npm install && npm test
 npm run deploy:testkrw              # tKRW token
+npm run verify:testkrw              # publish source to Giwa's Blockscout
 BANKROLL_TKRW=10000000 npm run deploy:vault
+npm run verify:vault
 ```
+
+Verifying is a separate step and not an optional one: until the source is
+published, the explorer shows bytecode, so a player cannot read the custody
+contract they are depositing into. Live addresses and their verification status
+are in [`contracts/DEPLOYMENTS.md`](contracts/DEPLOYMENTS.md).
 
 Full guides in [`docs/`](docs) — start with `production-architecture.md`.
