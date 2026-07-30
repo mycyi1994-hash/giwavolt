@@ -1,0 +1,11 @@
+node_modules/
+.env
+.env.local
+.DS_Store
+
+# 덱 폰트 — docs/deck_brand.py 헤더의 설치 방법 참고
+docs/fonts/
+
+# python bytecode
+__pycache__/
+*.pyc
