@@ -14,7 +14,8 @@
 > vault's bankroll has never been funded.
 >
 > Addresses and their verification status are in
-> [`contracts/DEPLOYMENTS.md`](contracts/DEPLOYMENTS.md).
+> [`contracts/DEPLOYMENTS.md`](contracts/DEPLOYMENTS.md); the design and the
+> maths behind it are in [`WHITEPAPER.md`](WHITEPAPER.md).
 
 Two games — **Tap Trading** and **Death Fun** — in a neon cyberpunk terminal.
 Two modes:
