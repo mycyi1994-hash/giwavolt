@@ -82,4 +82,26 @@ describe("GameVault", () => {
     const { vault, alice, bob } = await deploy();
     await expect(vault.connect(alice).setOperator(bob.address)).to.be.revertedWith("not owner");
   });
+
+  // The owner key exists to revoke the operator key if the server holding it is
+  // compromised. Point both at one address and that revoke does not exist, so
+  // the contract refuses the configuration outright rather than trusting whoever
+  // fills in the deploy arguments.
+  it("refuses to deploy with the operator set to the owner", async () => {
+    const [owner] = await ethers.getSigners();
+    const T = await ethers.getContractFactory("TestKRW");
+    const token = await T.deploy();
+    const V = await ethers.getContractFactory("GameVault");
+    await expect(V.deploy(await token.getAddress(), owner.address)).to.be.revertedWith("operator is owner");
+  });
+
+  it("refuses to rotate the operator onto the owner", async () => {
+    const { vault, owner } = await deploy();
+    await expect(vault.setOperator(owner.address)).to.be.revertedWith("operator is owner");
+  });
+
+  it("refuses to hand ownership to the operator", async () => {
+    const { vault, operator } = await deploy();
+    await expect(vault.transferOwnership(operator.address)).to.be.revertedWith("owner is operator");
+  });
 });

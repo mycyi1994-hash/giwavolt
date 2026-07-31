@@ -36,8 +36,16 @@ contract GameVault {
     event BankrollFunded(address indexed from, uint256 amount);
     event OperatorChanged(address indexed operator);
 
+    /// @dev The operator cannot be the owner. The operator key signs every
+    ///      withdrawal, so it lives on the server and is exposed by definition;
+    ///      the owner key exists to revoke it if that server is compromised. Set
+    ///      to the same address, the revoke does not exist — whoever takes the
+    ///      hot key also takes the ability to rotate it. Enforced here rather
+    ///      than written in a runbook, because a deployment gets configured once
+    ///      and read never.
     constructor(address token_, address operator_) {
         require(token_ != address(0) && operator_ != address(0), "zero");
+        require(operator_ != msg.sender, "operator is owner");
         token = IERC20(token_);
         owner = msg.sender;
         operator = operator_;
@@ -58,12 +66,16 @@ contract GameVault {
 
     function setOperator(address op) external onlyOwner {
         require(op != address(0), "zero");
+        require(op != owner, "operator is owner"); // same reason as the constructor
         operator = op;
         emit OperatorChanged(op);
     }
 
     function transferOwnership(address newOwner) external onlyOwner {
         require(newOwner != address(0), "zero");
+        // Handing ownership to the operator would collapse the two roles by the
+        // back door, so the same rule applies from this direction too.
+        require(newOwner != operator, "owner is operator");
         owner = newOwner;
     }
 
