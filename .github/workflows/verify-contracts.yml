@@ -22,6 +22,18 @@ on:
         description: "GameVault operator address — required only when verifying a vault"
         required: false
         default: ""
+      evm:
+        description: "EVM version the contract was compiled for (paris | shanghai | cancun)"
+        required: false
+        default: "paris"
+      optimizer:
+        description: "Optimizer enabled at deploy time (true | false)"
+        required: false
+        default: "true"
+      optimizer_runs:
+        description: "Optimizer runs at deploy time"
+        required: false
+        default: "200"
 
 jobs:
   verify:
@@ -43,6 +55,10 @@ jobs:
       # here rather than as an opaque rejection from the explorer.
       - name: Compile
         working-directory: contracts
+        env:
+          SOLC_EVM_VERSION: ${{ inputs.evm }}
+          SOLC_OPTIMIZER: ${{ inputs.optimizer }}
+          SOLC_OPTIMIZER_RUNS: ${{ inputs.optimizer_runs }}
         run: npm run compile
 
       - name: Verify TestKRW
@@ -50,6 +66,9 @@ jobs:
         working-directory: contracts
         env:
           TESTKRW_ADDRESS: ${{ inputs.testkrw }}
+          SOLC_EVM_VERSION: ${{ inputs.evm }}
+          SOLC_OPTIMIZER: ${{ inputs.optimizer }}
+          SOLC_OPTIMIZER_RUNS: ${{ inputs.optimizer_runs }}
         run: npm run verify:testkrw
 
       - name: Verify GameVault
@@ -59,6 +78,9 @@ jobs:
           GAMEVAULT_ADDRESS: ${{ inputs.vault }}
           TESTKRW_ADDRESS: ${{ inputs.testkrw }}
           OPERATOR_ADDRESS: ${{ inputs.operator }}
+          SOLC_EVM_VERSION: ${{ inputs.evm }}
+          SOLC_OPTIMIZER: ${{ inputs.optimizer }}
+          SOLC_OPTIMIZER_RUNS: ${{ inputs.optimizer_runs }}
         run: npm run verify:vault
 
       - name: Where to look
