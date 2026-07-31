@@ -106,11 +106,39 @@ let lastVolAt = 0;
 // Re-measuring sweeps ~10 minutes of ticks, so doing it on every trade would
 // burn real CPU at 20 prints/s to refine an estimate that moves on a far slower
 // clock. Once a second is plenty.
+// How long a good estimate keeps standing after the next one refuses. The
+// estimate is recomputed every second, and a borderline market flips it on and
+// off at that rate — which blanks and restores the whole board once a second.
+// Volatility does not move meaningfully in a few seconds, so carrying the last
+// good reading briefly is both calmer and no less accurate.
+const VOL_GRACE_MS = 4_000;
+
+let lastGoodVol: number | null = null;
+let lastGoodAt = 0;
+
 function recompute(force = false) {
   const now = Date.now();
   if (!force && now - lastVolAt < 1000) return;
   lastVolAt = now;
   const { vol, samples, reason } = measureVolForPricing(ticks);
+
+  if (vol !== null) {
+    lastGoodVol = vol;
+    lastGoodAt = now;
+    state = { ...state, vol, volSamples: samples, volReason: reason };
+    return;
+  }
+
+  // "too-fast" is the one refusal the grace period must not cover. It means the
+  // measurement came in above the ceiling, and quoting a lower stale value
+  // there underprices exactly the tail cells that pay the most.
+  const graceable = reason !== "too-fast";
+  if (graceable && lastGoodVol !== null && now - lastGoodAt < VOL_GRACE_MS) {
+    state = { ...state, vol: lastGoodVol, volSamples: samples, volReason: "ok" };
+    return;
+  }
+
+  lastGoodVol = null;
   state = { ...state, vol, volSamples: samples, volReason: reason };
 }
 
@@ -183,6 +211,13 @@ function openBinanceWs() {
   }
 }
 
+// Kept for reference and for a future second venue, but not opened. Running two
+// venues meant whichever answered first claimed the feed, and Coinbase's ticker
+// channel publishes on change rather than per trade — sparse enough that the
+// series became a staircase, which the estimator reads as a stalled market and
+// which made quoting flicker on and off. One dense trade stream is better than
+// two feeds of unequal density.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function openCoinbaseWs() {
   try {
     const ws = new WebSocket("wss://ws-feed.exchange.coinbase.com");
@@ -234,7 +269,6 @@ function scheduleReconnect() {
     reconnectTimer = null;
     if (stopped || state.source) return;
     openBinanceWs();
-    openCoinbaseWs();
   }, delay);
 }
 
@@ -291,8 +325,8 @@ async function pollRest() {
     if (p !== null) pushTick(p, Date.now(), state.source);
     return;
   }
-  // Nothing has claimed the feed yet, so whichever answers first may have it.
-  for (const venue of ["binance", "coinbase"] as Venue[]) {
+  // Nothing has claimed the feed yet.
+  for (const venue of ["binance"] as Venue[]) {
     const p = await restPrice(venue);
     if (p === null) continue;
     const source: FeedSource = `${venue}-rest`;
@@ -382,10 +416,11 @@ function start() {
   startedAt = Date.now();
   backfilled = false;
   stopped = false;
+  lastGoodVol = null;
+  lastGoodAt = 0;
   reconnects = 0;
   state = { ...state, status: "connecting" };
   openBinanceWs();
-  openCoinbaseWs();
   watchdog = setInterval(tickWatchdog, 500);
 }
 
