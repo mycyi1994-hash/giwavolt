@@ -5,7 +5,8 @@ import { join } from "path";
 // Deploys GameVault for the off-chain game balance (on-chain custody).
 //   PRIVATE_KEY    deployer = owner
 //   TESTKRW_ADDRESS  the tKRW token (else read from deployments/testKRW.<net>.json)
-//   OPERATOR_ADDRESS the backend signer that authorises withdrawals (default: deployer)
+//   OPERATOR_ADDRESS the backend signer that authorises withdrawals. REQUIRED,
+//                    and must not be the deployer — see GameVault's constructor.
 //   BANKROLL_TKRW    optional tKRW to seed the house bankroll (default "0")
 async function main() {
   const [deployer] = await ethers.getSigners();
@@ -18,7 +19,22 @@ async function main() {
       throw new Error("Set TESTKRW_ADDRESS (or deploy TestKRW first).");
     }
   }
-  const operator = process.env.OPERATOR_ADDRESS ?? deployer.address;
+  // No defaulting to the deployer. The vault rejects operator == owner, so the
+  // old default now always reverts — and reverting costs gas and reports as
+  // "operator is owner" from inside the constructor, which reads like a bug in
+  // the contract rather than a missing variable. Fail here, before the tx.
+  const operator = process.env.OPERATOR_ADDRESS;
+  if (!operator) {
+    throw new Error(
+      "Set OPERATOR_ADDRESS. It signs withdrawal vouchers from the server, so it must be a\n" +
+        "separate address from the deployer: the deployer's key stays off the server and is what\n" +
+        "revokes the operator if that server is compromised. A fresh wallet account is enough —\n" +
+        "it never needs funding, it only signs."
+    );
+  }
+  if (operator.toLowerCase() === deployer.address.toLowerCase()) {
+    throw new Error("OPERATOR_ADDRESS must not be the deployer — the vault would reject it.");
+  }
 
   console.log("Deploying GameVault with");
   console.log("  deployer/owner:", deployer.address);

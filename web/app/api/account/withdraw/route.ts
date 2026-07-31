@@ -12,7 +12,12 @@ export const dynamic = "force-dynamic";
 // signs an EIP-712 cumulative voucher and relays the withdraw tx. Funds go only
 // to the player. We debit the ledger first and refund if the on-chain tx fails.
 export async function POST(req: Request) {
-  const key = (process.env.OPERATOR_PRIVATE_KEY ?? process.env.FAUCET_PRIVATE_KEY) as `0x${string}` | undefined;
+  // No falling back to FAUCET_PRIVATE_KEY. The vault now requires its operator
+  // to differ from its owner, so that fallback would sign every voucher with a
+  // key the vault does not accept — every withdrawal reverting as "bad sig" —
+  // and the reason it existed, "use one key for all", is the arrangement the
+  // separation is there to prevent.
+  const key = process.env.OPERATOR_PRIVATE_KEY as `0x${string}` | undefined;
   if (!key || !gameVaultEnabled) {
     return err("Withdrawals not configured (OPERATOR_PRIVATE_KEY + NEXT_PUBLIC_GAMEVAULT_ADDRESS).", 503);
   }
@@ -54,7 +59,12 @@ export async function POST(req: Request) {
       functionName: "withdraw",
       args: [address as `0x${string}`, cumulative, sig],
     });
-    await publicClient.waitForTransactionReceipt({ hash: tx });
+    // A receipt is not a success. waitForTransactionReceipt resolves for a
+    // reverted transaction too, so without this check a revert that got past
+    // gas estimation — the operator rotated mid-flight, a race on `withdrawn`,
+    // out of gas — would debit the player and report ok.
+    const receipt = await publicClient.waitForTransactionReceipt({ hash: tx });
+    if (receipt.status !== "success") throw new Error(`withdraw reverted on-chain (${tx})`);
     return json({ ok: true, balance, tx });
   } catch (e: any) {
     await credit(address, amount, "refund", "withdraw-failed"); // give it back

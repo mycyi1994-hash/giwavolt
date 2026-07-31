@@ -35,12 +35,24 @@ automatically, or set it in the env.)
 `web/.env.local`:
 ```
 NEXT_PUBLIC_GAMEVAULT_ADDRESS=0x...        # from step 1
-OPERATOR_PRIVATE_KEY=0x...                 # same key as the deployer/operator (server-only)
+OPERATOR_PRIVATE_KEY=0x...                 # the OPERATOR's key — not the deployer's
 # GAMEVAULT_DEPLOY_BLOCK=12345             # optional: speeds up deposit scans
 ```
-If you use one key for everything, `OPERATOR_PRIVATE_KEY` can equal
-`FAUCET_PRIVATE_KEY` (it falls back to it). The operator address **must** match
-the vault's operator (the deployer by default).
+
+`OPERATOR_PRIVATE_KEY` is the key of the address you passed as the vault's
+operator, and that address is **not** the deployer — `GameVault`'s constructor
+rejects a deployment where they are the same.
+
+The reason is worth stating once. This key signs on every cash-out, so it has to
+live on a server; it is the exposed one by construction. The deployer's key is
+what calls `setOperator` to revoke it when that server is compromised, so it
+stays in a wallet and never reaches a deployment environment. One key doing both
+means the compromise cannot be revoked — whoever takes the hot key also takes
+the ability to rotate it.
+
+There is no fallback to `FAUCET_PRIVATE_KEY`. Leaving `OPERATOR_PRIVATE_KEY`
+unset turns withdrawals off rather than signing them with a key the vault would
+reject.
 
 Restart `npm run dev`.
 
