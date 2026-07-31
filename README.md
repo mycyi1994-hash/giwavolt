@@ -1,5 +1,21 @@
 # VOLT ⚡ — crypto arcade (Giwa Sepolia)
 
+> ### What the public demo actually runs
+>
+> **https://www.voltaction.xyz is DEMO-only.** Both games are fully playable
+> there, in browser-side play money, and nothing on that deployment touches a
+> chain or a database.
+>
+> REAL mode — the server-authoritative ledger, and deposits and withdrawals
+> through GameVault — is written and tested, and both contracts are deployed and
+> source-verified on Giwa Sepolia. It is switched **off** in that deployment:
+> `NEXT_PUBLIC_REAL_MODE`, `NEXT_PUBLIC_GAMEVAULT_ADDRESS` and
+> `OPERATOR_PRIVATE_KEY` are unset, so the REAL toggle renders disabled, and the
+> vault's bankroll has never been funded.
+>
+> Addresses and their verification status are in
+> [`contracts/DEPLOYMENTS.md`](contracts/DEPLOYMENTS.md).
+
 Two games — **Tap Trading** and **Death Fun** — in a neon cyberpunk terminal.
 Two modes:
 
