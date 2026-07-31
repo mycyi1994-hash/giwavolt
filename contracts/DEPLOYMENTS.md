@@ -33,6 +33,25 @@ would want the former.
 `p4-deploy-vercel.md` lists `NEXT_PUBLIC_GAMEVAULT_ADDRESS` under "when the vault
 is deployed" and leaves it blank, so REAL-mode deposit/withdraw is not live.
 
+## Two keys, not one
+
+`GameVault` takes an operator address and the contract **refuses to deploy if it
+equals the deployer**. The two roles are:
+
+| | What it does | Where it lives |
+| --- | --- | --- |
+| **owner** (the deployer) | rotates the operator, transfers ownership | a wallet, never the server |
+| **operator** | signs every withdrawal voucher | the server — `OPERATOR_PRIVATE_KEY` |
+
+The operator key is exposed by definition: the server has to sign with it on
+every cash-out, so it sits in a deployment environment. The owner key is what
+revokes it when that server is compromised. Point both at one address and the
+revoke does not exist — whoever takes the hot key also takes the ability to
+rotate it, and the vault cannot be cut off.
+
+So make a second address before deploying and pass it as the operator. It needs
+no funding; it only ever signs.
+
 ## Deploy and verify
 
 ```bash
