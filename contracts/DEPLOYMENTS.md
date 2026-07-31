@@ -11,15 +11,23 @@ the running app is actually pointed at.
 
 | Contract | Address | Explorer | Source verified |
 | --- | --- | --- | --- |
-| `TestKRW` (tKRW) | `0x616cb26e3Af3895DEAc5A53f760ECEFaEF4e78bc` | [address](https://sepolia-explorer.giwa.io/address/0x616cb26e3Af3895DEAc5A53f760ECEFaEF4e78bc) | **unconfirmed — run `npm run verify:testkrw`** |
+| `TestKRW` (tKRW) | `0x616cb26e3Af3895DEAc5A53f760ECEFaEF4e78bc` | [address](https://sepolia-explorer.giwa.io/address/0x616cb26e3Af3895DEAc5A53f760ECEFaEF4e78bc) | **yes** — verified 2026-07-31, partial match |
 | `GameVault` | not recorded | — | not deployed as far as this repo shows |
 
-The tKRW address is the one `docs/p4-deploy-vercel.md` configures
-`NEXT_PUBLIC_TESTKRW_ADDRESS` with for the production Vercel deployment. It has
-not been checked against the chain from inside this repo, and no deployment
-block, owner or faucet wallet was recorded, so treat the row as "what production
-is configured with" rather than a confirmed on-chain fact until someone opens the
-explorer link.
+The tKRW address is confirmed on-chain: the explorer reports it as `Test KRW
+(tKRW)`, created by `0x5E…F1C0`, and its source is published — solc 0.8.24,
+optimizer on, 200 runs, EVM paris, `src/TestKRW.sol`.
+
+Blockscout calls it a **partial match**, which is the expected outcome here and
+not a defect: the runtime bytecode matches the compiled source exactly, and only
+the trailing metadata hash differs, because the deploy and this verification did
+not compile from byte-identical settings (this repo builds solc through the
+solc-js package rather than a native binary). Source, ABI and the Read/Write
+tabs all work, which is what verification is for.
+
+Still not recorded: the deployment block and the faucet wallet. Neither is
+needed to read the contract, but `GAMEVAULT_DEPLOY_BLOCK`-style optimisations
+would want the former.
 
 `GameVault` is the custody contract for REAL-mode deposits and withdrawals.
 `p4-deploy-vercel.md` lists `NEXT_PUBLIC_GAMEVAULT_ADDRESS` under "when the vault
