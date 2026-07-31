@@ -51,6 +51,9 @@ export default function LiveFeed({ className = "" }: { className?: string }) {
       <div className="mb-1.5 flex items-center gap-1.5 font-mono text-[9px] tracking-[0.25em] text-faint">
         <span className="h-1.5 w-1.5 rounded-full bg-lime animate-flicker" /> LIVE
       </div>
+      {/* No per-row backdrop-filter: 30 rows sat directly on top of the
+          60fps canvas, so each was its own backdrop surface to resolve
+          every frame. A slightly more opaque background reads the same. */}
       <div className="flex flex-col gap-1">
         {items.map((e, i) => {
           const m = META[e.kind];
@@ -58,7 +61,7 @@ export default function LiveFeed({ className = "" }: { className?: string }) {
           return (
             <div
               key={e.id}
-              className={`flex items-center gap-1.5 overflow-hidden whitespace-nowrap border border-line/60 bg-ink/70 px-2 py-1 font-mono clip backdrop-blur-sm ${e.mega ? "animate-rise" : ""}`}
+              className={`flex items-center gap-1.5 overflow-hidden whitespace-nowrap border border-line/60 bg-ink/85 px-2 py-1 font-mono clip ${e.mega ? "animate-rise" : ""}`}
               style={{ opacity: fade, boxShadow: e.mega ? `0 0 12px ${e.kind === "bust" ? "rgba(255,43,214,.5)" : "rgba(57,255,20,.5)"}` : undefined, borderColor: e.mega ? (e.kind === "bust" ? "rgba(255,43,214,.6)" : "rgba(57,255,20,.6)") : undefined }}
             >
               <span className={`shrink-0 ${m.cls}`}>{m.icon}</span>

@@ -125,8 +125,16 @@ function advance() {
   const last = cache.length ? cache[cache.length - 1].t : origin;
   if (now - last >= SYNTH_STEP_MS) {
     for (let t = last + SYNTH_STEP_MS; t <= now; t += SYNTH_STEP_MS) cache.push({ t, p: p.priceAt(t) });
+    // Drop from the front instead of rebuilding. ensurePath() seeds the cache
+    // full, so the eviction branch is hot from the very first step: filter()
+    // was reallocating and copying all ~1,800 entries about ten times a second
+    // to retire a handful off the front. splice touches only what leaves.
     const cutoff = now - KEEP_MS;
-    if (cache.length && cache[0].t < cutoff) cache = cache.filter((tk) => tk.t >= cutoff);
+    if (cache.length && cache[0].t < cutoff) {
+      let drop = 0;
+      while (drop < cache.length && cache[drop].t < cutoff) drop++;
+      if (drop) cache.splice(0, drop);
+    }
   }
   return cache;
 }
