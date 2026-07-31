@@ -89,7 +89,7 @@ function cellRGB(t: number): [number, number, number] {
 export default function GameChart({
   bidSize,
   zoom = 1,
-  market = "btc",
+  market = "volt",
   realMode = false,
   ambient = false,
   unit = "USDC",

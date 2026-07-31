@@ -5,7 +5,6 @@ import { ZoomIn, ZoomOut } from "lucide-react";
 import { useAccount } from "wagmi";
 import GameChart, { type BetStatus, type PlacedBet, type PlaceResult, type Settlement } from "@/components/GameChart";
 import TapPanel from "@/components/play/TapPanel";
-import LiveFeed from "@/components/play/LiveFeed";
 import ConnectGate from "@/components/play/ConnectGate";
 import { usePlay } from "@/components/play/PlayProvider";
 import { useToast } from "@/components/ui/Toast";
@@ -23,7 +22,12 @@ export default function TapTradingPage() {
   const real = mode === "real";
   const toast = useToast();
 
-  const [market, setMarket] = useState<MarketId>("btc");
+  // VOLT by default. It is generated in this browser, so it draws immediately
+  // with no network — whereas BTC needs an exchange socket that is geo-blocked
+  // in some regions and simply shows CONNECTING there. A first-time visitor
+  // should see the game working, not a spinner, and can switch to BTC from the
+  // toolbar. Selecting REAL forces BTC anyway, since VOLT never takes real money.
+  const [market, setMarket] = useState<MarketId>("volt");
   const snap = useMarketSnapshot(market);
 
   const [bid, setBid] = useState(5);
@@ -178,7 +182,6 @@ export default function TapTradingPage() {
             <MarketPicker market={market} onPick={setMarket} real={real} />
             <FeedBadge snap={snap} />
           </div>
-          <LiveFeed className="absolute bottom-4 left-3 top-12 z-10 hidden w-56 overflow-hidden md:block" />
 
           <div className="panel clip absolute right-4 top-3 z-10 flex items-center gap-3 px-3 py-1.5 font-mono text-[11px]">
             <Stat label="LIVE" value={String(stats.live)} cls="text-magenta" />

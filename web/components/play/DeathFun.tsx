@@ -7,7 +7,6 @@ import { usePlay } from "./PlayProvider";
 import ModeToggle from "./ModeToggle";
 import AnimatedNumber from "@/components/ui/AnimatedNumber";
 import QuoteTicker from "@/components/ui/QuoteTicker";
-import LiveFeed from "./LiveFeed";
 import { useToast } from "@/components/ui/Toast";
 import { sfx } from "@/lib/sound";
 import { newBoard, multiplierAfter, revealAll, DIFFICULTIES, DIFFICULTY_ORDER, totalTiles } from "@/lib/death";
@@ -360,7 +359,6 @@ export default function DeathFun() {
 
       {/* board */}
       <main className="relative grid min-w-0 flex-1 place-items-center overflow-auto p-6">
-        <LiveFeed className="absolute bottom-3 left-3 top-3 z-20 hidden w-56 overflow-hidden lg:block" />
         <div className="absolute inset-x-0 top-4 flex flex-wrap items-center justify-center gap-x-6 gap-y-1 font-mono text-[12px]">
           <Tag label="SKULLS" value={`${death.bombs}`} cls="text-magenta" />
           <span className="flex items-center gap-1.5">
