@@ -10,6 +10,7 @@ docs/fonts/
 # docs/*.py 를 돌린 결과가 실수로 커밋되지 않게 막는다.
 /VOLT-IR-Deck.pdf
 /VOLT-Introduction.pdf
+/VOLT-Pitch-Deck.pdf
 
 # python bytecode
 __pycache__/
