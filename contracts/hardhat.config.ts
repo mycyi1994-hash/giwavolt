@@ -20,10 +20,21 @@ subtask(TASK_COMPILE_SOLIDITY_GET_SOLC_BUILD, async (args: any, _hre, runSuper) 
 });
 
 const config: HardhatUserConfig = {
+  // Compiler settings are overridable by env so a contract deployed elsewhere —
+  // Remix, say — can still be verified against this source. Verification
+  // recompiles and compares bytecode, so it has to reproduce the settings the
+  // deployment actually used, not the ones we prefer. Defaults are unchanged.
+  //
+  // A quick tell for EVM version: bytecode containing 5f (PUSH0) was compiled
+  // for shanghai or later; paris output uses 6000 (PUSH1 0) instead.
   solidity: {
     version: "0.8.24",
     settings: {
-      optimizer: { enabled: true, runs: 200 },
+      optimizer: {
+        enabled: process.env.SOLC_OPTIMIZER !== "false",
+        runs: Number(process.env.SOLC_OPTIMIZER_RUNS ?? 200),
+      },
+      evmVersion: process.env.SOLC_EVM_VERSION ?? "paris",
       viaIR: false,
     },
   },
