@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
+    "perf": "node scripts/perf.mjs",
     "verify:vol": "tsx scripts/verify-vol.ts",
     "verify:synth": "tsx scripts/verify-synth.ts",
     "verify:edge": "tsx scripts/verify-edge.ts",

@@ -118,11 +118,14 @@ function pushTick(p: number, t: number, source: FeedSource) {
   if (last && t < last.t) t = last.t; // keep the series monotonic in time
   ticks.push({ t, p });
 
+  // Trim in place. slice() copied the whole retained window — 11 minutes of
+  // trades, so ~13,000 entries at a busy moment — on every single print, inside
+  // the socket's own message handler.
   const cutoff = t - TICK_KEEP_MS;
   if (ticks.length > 64 && ticks[0].t < cutoff) {
     let i = 0;
     while (i < ticks.length && ticks[i].t < cutoff) i++;
-    ticks = ticks.slice(i);
+    if (i) ticks.splice(0, i);
   }
 
   recompute();

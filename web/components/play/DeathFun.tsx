@@ -380,8 +380,12 @@ export default function DeathFun() {
             className={shake ? "animate-shake" : ""}
             style={{ display: "grid", gridTemplateColumns: `repeat(${death.dim}, ${tilePx}px)`, gap }}
           >
+            {/* key is the index alone. With the tile state in the key, every
+                reveal unmounted and remounted that tile — on ULTRA that is a
+                400-cell grid of clip-paths and box-shadows rebuilt from
+                scratch instead of updated. */}
             {death.tiles.map((t, i) => (
-              <Tile key={`${i}-${t}`} t={t} size={tilePx} active={playing} animate={animate} preview={playing && tilePx >= 30 ? `${nextMult.toFixed(2)}×` : ""} onClick={() => reveal(i)} />
+              <Tile key={i} t={t} size={tilePx} active={playing} animate={animate} preview={playing && tilePx >= 30 ? `${nextMult.toFixed(2)}×` : ""} onClick={() => reveal(i)} />
             ))}
           </div>
 

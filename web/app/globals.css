@@ -28,14 +28,18 @@ body {
   overflow: hidden;
 }
 
-/* faint scanlines over everything */
+/* faint scanlines over everything.
+   No mix-blend-mode: a non-normal blend mode on a fixed, full-viewport element
+   makes the compositor render the entire page into a backdrop surface and blend
+   it again on every frame — on every screen, over a 60fps canvas. Against this
+   dark background multiply by black is visually the same as plain alpha, so the
+   scanlines are drawn as ordinary translucent black and the blend pass is gone. */
 body::after {
   content: "";
   position: fixed;
   inset: 0;
   pointer-events: none;
-  background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.18) 0 1px, transparent 1px 3px);
-  mix-blend-mode: multiply;
+  background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.16) 0 1px, transparent 1px 3px);
   z-index: 9999;
 }
 

@@ -24,6 +24,8 @@ const GRID_REBASE_TOLERANCE = 0.15; // re-size bands once vol has moved this muc
 const PRICE_REPORT_MS = 100; // throttle for the onPrice callback
 const MIN_POINT_PX = 0.6; // decimate the tick line to roughly one point per pixel
 const H_REF_SEC = 28; // horizon the band height is sized at (matches lib/grid)
+const PRICE_MODEL_MS = 120; // how often the multiplier ladder is repriced (not per frame)
+const AMBIENT_FRAME_MS = 50; // backdrop charts draw at ~20fps, not the display rate
 
 export type BetStatus = "live" | "won" | "lost" | "cancel";
 
@@ -172,6 +174,23 @@ export default function GameChart({
     let range: { min: number; max: number } | null = null;
     let lastReport = 0;
     const mouse = { x: -1, y: -1, inside: false };
+    // Per-column sigma and per-band multipliers, recomputed on PRICE_MODEL_MS
+    // rather than per frame. Cleared whenever it goes stale or the band height
+    // changes; nothing here alters what a cell pays, only how often the same
+    // number is derived.
+    const gridModel = new Map<number, { sigma: number | null; m: Map<number, number> }>();
+    let gridModelAt = 0;
+    let gridModelStep = 0;
+    let lastAmbientFrame = 0;
+
+    // Canvas cannot resolve CSS custom properties in ctx.font — "11px
+    // var(--font-mono)" is an invalid font string, so every one of those
+    // assignments was silently discarded and the canvas kept whatever font it
+    // had. Resolve the real families once, from the element the variables are
+    // actually defined on.
+    const cs = getComputedStyle(document.documentElement);
+    const FONT_MONO = (cs.getPropertyValue("--font-mono").trim() || "monospace") + ", monospace";
+    const FONT_DISPLAY = (cs.getPropertyValue("--font-display").trim() || "sans-serif") + ", sans-serif";
 
     let W = 0;
     let H = 0;
@@ -459,16 +478,22 @@ export default function GameChart({
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillStyle = "rgba(139,147,184,0.85)";
-      ctx.font = "600 13px var(--font-mono, monospace)";
+      ctx.font = `600 13px ${FONT_MONO}`;
       ctx.fillText(text, W / 2, H / 2 - 10);
       ctx.fillStyle = "rgba(139,147,184,0.5)";
-      ctx.font = "500 11px var(--font-mono, monospace)";
+      ctx.font = `500 11px ${FONT_MONO}`;
       ctx.fillText(sub, W / 2, H / 2 + 12);
     }
 
     function draw() {
       raf = requestAnimationFrame(draw);
       const now = Date.now();
+      // Decoration does not need every vsync. Interactive charts still draw at
+      // the display's rate; the hub backdrop settles for a third of it.
+      if (ambientRef.current) {
+        if (now - lastAmbientFrame < AMBIENT_FRAME_MS) return;
+        lastAmbientFrame = now;
+      }
       // Swap markets without remounting: stop the old one, start the new, and
       // drop the grid so it re-sizes to the new price scale.
       if (runningMarket !== marketRef.current) {
@@ -535,10 +560,24 @@ export default function GameChart({
       // ---- multiplier grid ----
       // Only drawn when we can actually honour it. A grid of numbers we would
       // refuse to take a bet on is worse than no grid.
-      if (quotable) {
-        ctx.font = "600 11px var(--font-mono, monospace)";
+      // Ambient is a backdrop behind two scrims at 60% opacity — the ladder is
+      // unreadable there, and it is the single most expensive thing on the
+      // canvas. The hub was paying for a board nobody could see.
+      if (quotable && !ambientRef.current) {
+        ctx.font = `600 11px ${FONT_MONO}`;
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
+        // The ladder is repriced on PRICE_MODEL_MS, not per frame. Drawing still
+        // happens every frame so the board scrolls smoothly, but sigma and the
+        // multipliers only move on human timescales — recomputing them 60x/s was
+        // ~15,000 erf evaluations and, on VOLT, ~195,000 schedule-integration
+        // steps per second. Same numbers, sampled at a rate a player can see.
+        const modelStale = now - gridModelAt >= PRICE_MODEL_MS || gridModelStep !== step;
+        if (modelStale) {
+          gridModelAt = now;
+          gridModelStep = step;
+          gridModel.clear();
+        }
         for (const c of columns) {
           if (c.resolved) continue;
           const h = (c.t - now) / 1000;
@@ -547,53 +586,65 @@ export default function GameChart({
           const x1 = xForTime(c.t + COL_INTERVAL_MS, now);
           if (x1 < nowX || x0 > W) continue;
           const cw = x1 - x0;
-          // σ is per-column: on VOLT it integrates a volatility schedule that
-          // changes across the board, so it cannot be hoisted out of the loop.
-          const colSigma = mk.sigma(price, now, c.t);
+          let col = gridModel.get(c.t);
+          if (!col) {
+            // sigma is per-column: on VOLT it integrates a volatility schedule
+            // that changes across the board, so it cannot be hoisted out.
+            const colSigma = mk.sigma(price, now, c.t);
+            col = { sigma: colSigma, m: new Map<number, number>() };
+            gridModel.set(c.t, col);
+          }
           for (let b = firstBand; b <= lastBand; b++) {
             const yTop = yForPrice(bandLow(b + 1));
             const yBot = yForPrice(bandLow(b));
             const ch = yBot - yTop;
             if (ch < 6) continue;
-            const lo = bandLow(b) - price;
-            const m = colSigma === null ? 0 : cellMultiplierAt(lo, lo + step, colSigma);
+            let m = col.m.get(b);
+            if (m === undefined) {
+              const lo = bandLow(b) - price;
+              m = col.sigma === null ? 0 : cellMultiplierAt(lo, lo + step, col.sigma);
+              col.m.set(b, m);
+            }
             if (m <= 0) continue;
             const inten = multIntensity(m);
             const [r, g, bl] = cellRGB(inten);
             const isHover = hover && hover.colT === c.t && hover.band === b;
             const a = 0.06 + inten * 0.6;
-            // high-multiplier cells glow + faintly pulse — the bigger the hotter
-            const glow = inten > 0.55;
-            if (glow) {
-              ctx.shadowColor = `rgba(${r},${g},${bl},0.9)`;
-              ctx.shadowBlur = (4 + inten * 14) * (0.85 + 0.15 * Math.sin(now / 240 + b));
-            }
+            const hot = inten > 0.7;
+            // No shadowBlur on grid cells. Canvas shadows are a real Gaussian
+            // blur per shape, and ~144 of the ~190 visible cells crossed the old
+            // glow threshold — about twice the canvas area blurred every frame,
+            // which is what pinned the main thread. "Hotter = bigger payout"
+            // still reads, through colour intensity and a heavier border.
             ctx.fillStyle = isHover ? `rgba(${r},${g},${bl},0.95)` : `rgba(${r},${g},${bl},${a.toFixed(3)})`;
             roundRect(ctx, x0 + 1.5, yTop + 1.5, cw - 3, ch - 3, 3);
             ctx.fill();
-            ctx.shadowBlur = 0;
-            const hot = inten > 0.7;
             ctx.strokeStyle = isHover ? "#ffffff" : `rgba(${r},${g},${bl},${(0.3 + inten * 0.65).toFixed(3)})`;
-            ctx.lineWidth = hot ? 2 : glow ? 1.4 : 1;
+            ctx.lineWidth = hot ? 2.2 : inten > 0.55 ? 1.6 : 1;
             ctx.stroke();
             // multiplier label — scales with the cell, big payouts get loud
             if (ch > 10 && cw > 16) {
-              const fs = Math.max(12, Math.min(ch * 0.66, cw * 0.58, 46));
+              // Size to the label that is actually drawn. The old cw * 0.58 was
+              // never exercised: ctx.font carried a CSS variable, so the string
+              // was invalid and the size never took. With the font fixed, that
+              // factor overflows narrow columns, so width comes from the glyph
+              // count and the face's advance instead.
+              const label = fmtMult(m);
+              const adv = hot ? 0.78 : 0.62; // Orbitron is wider than the mono face
+              const fitW = (cw - 6) / (label.length * adv);
+              const fs = Math.max(10, Math.min(ch * 0.66, fitW, 46));
               const mx = (x0 + x1) / 2;
               const my = (yTop + yBot) / 2;
-              ctx.font = `${hot ? 900 : inten > 0.4 ? 700 : 600} ${fs.toFixed(0)}px ${hot ? "var(--font-display, sans-serif)" : "var(--font-mono, monospace)"}`;
+              ctx.font = `${hot ? 900 : inten > 0.4 ? 700 : 600} ${fs.toFixed(0)}px ${hot ? FONT_DISPLAY : FONT_MONO}`;
               if (hot && !isHover) {
-                // dark outline so the bright number pops, + glow
+                // dark outline so the bright number pops
                 ctx.lineWidth = Math.max(2, fs * 0.14);
                 ctx.strokeStyle = "rgba(6,6,14,0.85)";
-                ctx.strokeText(fmtMult(m), mx, my);
-                ctx.shadowColor = `rgba(${r},${g},${bl},0.95)`;
-                ctx.shadowBlur = 8 + inten * 10;
+                ctx.strokeText(label, mx, my);
               }
               ctx.fillStyle = isHover ? "#06060e" : hot ? `rgb(255,${Math.round(245 - inten * 30)},${Math.round(210 - inten * 120)})` : `rgba(233,243,255,${(0.5 + inten * 0.5).toFixed(3)})`;
-              ctx.fillText(fmtMult(m), mx, my);
-              ctx.shadowBlur = 0;
-              ctx.font = "600 11px var(--font-mono, monospace)";
+              ctx.fillText(label, mx, my);
+              ctx.font = `600 11px ${FONT_MONO}`;
             }
           }
         }
@@ -602,7 +653,7 @@ export default function GameChart({
       // ---- active bet markers ----
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.font = "700 12px var(--font-display, sans-serif)";
+      ctx.font = `700 12px ${FONT_DISPLAY}`;
       for (const bt of bets) {
         if (bt.status === "lost") continue;
         const x0 = xForTime(bt.colT, now);
@@ -628,9 +679,9 @@ export default function GameChart({
         if (yBot - yTop > 16) {
           ctx.fillStyle = won ? "#06060e" : "#ffe27a";
           ctx.fillText(amt(bt.stake, unitRef.current), (x0 + x1) / 2, (yTop + yBot) / 2 - 6);
-          ctx.font = "600 10px var(--font-mono, monospace)";
+          ctx.font = `600 10px ${FONT_MONO}`;
           ctx.fillText(bt.pending ? "…" : fmtMult(bt.mult), (x0 + x1) / 2, (yTop + yBot) / 2 + 7);
-          ctx.font = "700 12px var(--font-display, sans-serif)";
+          ctx.font = `700 12px ${FONT_DISPLAY}`;
         }
         ctx.globalAlpha = 1;
       }
@@ -711,7 +762,7 @@ export default function GameChart({
 
       // ---- right price axis ----
       ctx.textAlign = "right";
-      ctx.font = "500 10px var(--font-mono, monospace)";
+      ctx.font = `500 10px ${FONT_MONO}`;
       const labelStep = niceStep((range!.max - range!.min) / 7);
       ctx.fillStyle = "rgba(139,147,184,0.7)";
       for (let p = Math.ceil(range!.min / labelStep) * labelStep; p <= range!.max; p += labelStep) {
@@ -725,7 +776,7 @@ export default function GameChart({
       ctx.fill();
       ctx.shadowBlur = 0;
       ctx.fillStyle = "#06060e";
-      ctx.font = "700 11px var(--font-mono, monospace)";
+      ctx.font = `700 11px ${FONT_MONO}`;
       ctx.fillText(price.toFixed(2), W - 8, ly);
 
       // ---- feed banner: say plainly when the game is not taking bets ----
@@ -744,7 +795,7 @@ export default function GameChart({
                   ? "MARKET TOO VOLATILE — BETTING PAUSED"
                   : "MEASURING LIVE VOLATILITY…";
         ctx.textAlign = "center";
-        ctx.font = "700 11px var(--font-mono, monospace)";
+        ctx.font = `700 11px ${FONT_MONO}`;
         const wBox = ctx.measureText(msg).width + 24;
         ctx.fillStyle = "rgba(6,6,14,0.85)";
         roundRect(ctx, W / 2 - wBox / 2, plotTop + 6, wBox, 24, 3);
@@ -770,7 +821,7 @@ export default function GameChart({
         ctx.fillStyle = f.kind === "win" ? "#7dffb0" : "#9aa3c8";
         ctx.shadowColor = f.kind === "win" ? "rgba(57,255,20,0.8)" : "transparent";
         ctx.shadowBlur = f.kind === "win" ? 14 : 0;
-        ctx.font = "800 16px var(--font-display, sans-serif)";
+        ctx.font = `800 16px ${FONT_DISPLAY}`;
         ctx.fillText(f.text, f.x, f.y - age * 0.02);
         ctx.shadowBlur = 0;
         ctx.globalAlpha = 1;
