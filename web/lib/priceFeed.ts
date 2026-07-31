@@ -80,8 +80,15 @@ let state: FeedState = {
 const listeners = new Set<(s: FeedState) => void>();
 let refs = 0;
 let sockets: WebSocket[] = [];
+// Sockets are opened once at start(). Without this, a socket that fails to
+// open — or drops later — stayed dead for the rest of the session, and the
+// REST fallback hits the same hosts, so a blocked venue meant a permanently
+// blank chart rather than a temporary one.
+let reconnects = 0;
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let restTimer: ReturnType<typeof setInterval> | null = null;
 let watchdog: ReturnType<typeof setInterval> | null = null;
+let stopped = false;
 let startedAt = 0;
 let backfilled = false;
 
@@ -163,9 +170,16 @@ function openBinanceWs() {
         /* malformed frame — skip it */
       }
     };
+    ws.onerror = () => {
+      /* the close event that follows is where the retry is scheduled */
+    };
+    ws.onclose = () => {
+      sockets = sockets.filter((x) => x !== ws);
+      scheduleReconnect();
+    };
     sockets.push(ws);
   } catch {
-    /* socket unavailable in this environment */
+    scheduleReconnect();
   }
 }
 
@@ -193,13 +207,37 @@ function openCoinbaseWs() {
         /* malformed frame — skip it */
       }
     };
+    ws.onerror = () => {
+      /* the close event that follows is where the retry is scheduled */
+    };
+    ws.onclose = () => {
+      sockets = sockets.filter((x) => x !== ws);
+      scheduleReconnect();
+    };
     sockets.push(ws);
   } catch {
-    /* socket unavailable in this environment */
+    scheduleReconnect();
   }
 }
 
 /** First venue to deliver a tick takes the feed; the rest are dropped. */
+const RECONNECT_MAX = 6;
+
+function scheduleReconnect() {
+  // Only while nothing is flowing. A venue that is answering must not be
+  // disturbed because the other one closed.
+  if (reconnectTimer || stopped || state.source) return;
+  if (reconnects >= RECONNECT_MAX) return;
+  const delay = Math.min(1_000 * 2 ** reconnects, 30_000);
+  reconnects += 1;
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    if (stopped || state.source) return;
+    openBinanceWs();
+    openCoinbaseWs();
+  }, delay);
+}
+
 function win(source: FeedSource) {
   state = { ...state, source };
   const keepUrl = source === "binance" ? "binance" : "coinbase";
@@ -325,6 +363,13 @@ function tickWatchdog() {
   const age = now - last;
   const next: FeedStatus = age > DOWN_MS ? "down" : age > STALE_MS ? "stale" : "live";
   if (next !== state.status) setState({ status: next });
+  // Stop polling once the socket is carrying again. This only ever got cleared
+  // on stop(), so one stale gap left a 2-second REST poll running for the whole
+  // session even after the socket recovered.
+  if (age <= STALE_MS && restTimer) {
+    clearInterval(restTimer);
+    restTimer = null;
+  }
   // A quiet socket means the venue dropped us — fall back to polling rather
   // than letting the chart sit on a stale price.
   if (age > STALE_MS && !restTimer) {
@@ -336,6 +381,8 @@ function start() {
   if (typeof window === "undefined") return;
   startedAt = Date.now();
   backfilled = false;
+  stopped = false;
+  reconnects = 0;
   state = { ...state, status: "connecting" };
   openBinanceWs();
   openCoinbaseWs();
@@ -343,6 +390,9 @@ function start() {
 }
 
 function stop() {
+  stopped = true;
+  if (reconnectTimer) clearTimeout(reconnectTimer);
+  reconnectTimer = null;
   for (const ws of sockets) {
     try {
       ws.close();
