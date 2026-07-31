@@ -12,7 +12,7 @@ the running app is actually pointed at.
 | Contract | Address | Explorer | Source verified |
 | --- | --- | --- | --- |
 | `TestKRW` (tKRW) | `0x616cb26e3Af3895DEAc5A53f760ECEFaEF4e78bc` | [address](https://sepolia-explorer.giwa.io/address/0x616cb26e3Af3895DEAc5A53f760ECEFaEF4e78bc) | **yes** — verified 2026-07-31, partial match |
-| `GameVault` | not recorded | — | not deployed as far as this repo shows |
+| `GameVault` | `0xc0c7A3DF600263492225d5dACecd5C036EF80B48` | [address](https://sepolia-explorer.giwa.io/address/0xc0c7A3DF600263492225d5dACecd5C036EF80B48) | **yes** — verified 2026-07-31 |
 
 The tKRW address is confirmed on-chain: the explorer reports it as `Test KRW
 (tKRW)`, created by `0x5E…F1C0`, and its source is published — solc 0.8.24,
@@ -29,9 +29,38 @@ Still not recorded: the deployment block and the faucet wallet. Neither is
 needed to read the contract, but `GAMEVAULT_DEPLOY_BLOCK`-style optimisations
 would want the former.
 
-`GameVault` is the custody contract for REAL-mode deposits and withdrawals.
-`p4-deploy-vercel.md` lists `NEXT_PUBLIC_GAMEVAULT_ADDRESS` under "when the vault
-is deployed" and leaves it blank, so REAL-mode deposit/withdraw is not live.
+`GameVault` custodies REAL-mode deposits and withdrawals. Its roles:
+
+| | Address |
+| --- | --- |
+| owner (deployer) | the wallet that deployed it — never on a server |
+| operator | `0x7C41A0706C7C5D20c8466709a7D1FcCACC35B04B` |
+
+**It was deployed from Remix, not from this repo, and therefore not with this
+repo's compiler settings.** Verifying it needs the overrides:
+
+```bash
+SOLC_EVM_VERSION=shanghai SOLC_OPTIMIZER=false \
+  GAMEVAULT_ADDRESS=0xc0c7A3DF600263492225d5dACecd5C036EF80B48 \
+  TESTKRW_ADDRESS=0x616cb26e3Af3895DEAc5A53f760ECEFaEF4e78bc \
+  OPERATOR_ADDRESS=0x7C41A0706C7C5D20c8466709a7D1FcCACC35B04B \
+  npm run verify:vault
+```
+
+Those two are Remix's defaults, and they are what the deployed bytecode says:
+it contains `5f` (PUSH0), which does not exist before shanghai, and its length
+matches an unoptimised build. The practical cost is a little more gas per call;
+nothing else differs, which is why it was not redeployed.
+
+Two things are still not done before REAL mode can be switched on:
+
+- **The bankroll is empty.** Nothing called `fundBankroll`, so the vault holds
+  only what players deposit. Players who win more than they put in cannot be
+  paid until it is funded.
+- **`NEXT_PUBLIC_GAMEVAULT_ADDRESS` and `OPERATOR_PRIVATE_KEY` are unset** in
+  the deployment, along with `NEXT_PUBLIC_REAL_MODE`, so REAL is off and the
+  toggle is disabled. `OPERATOR_PRIVATE_KEY` is the key of the operator address
+  above — never the deployer's.
 
 ## Two keys, not one
 
