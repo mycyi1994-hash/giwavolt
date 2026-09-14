@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createPublicClient, http, isAddress, formatEther } from "viem";
-import { giwaSepolia } from "@/lib/chain";
+import { activeChain, RPC_URL } from "@/lib/chain";
 import { GAMEVAULT_ADDRESS, gameVaultAbi, gameVaultEnabled } from "@/lib/gamevault";
 import { getSql } from "@/lib/server/db";
 import { credit } from "@/lib/server/ledger";
@@ -24,7 +24,7 @@ export async function POST(req: Request) {
   const address = body.address;
   if (!address || !isAddress(address)) return NextResponse.json({ error: "valid address required" }, { status: 400 });
 
-  const publicClient = createPublicClient({ chain: giwaSepolia, transport: http(process.env.NEXT_PUBLIC_GIWA_RPC_URL ?? "https://sepolia-rpc.giwa.io") });
+  const publicClient = createPublicClient({ chain: activeChain, transport: http(RPC_URL) });
   const fromBlock = process.env.GAMEVAULT_DEPLOY_BLOCK ? BigInt(process.env.GAMEVAULT_DEPLOY_BLOCK) : 0n;
 
   let logs;

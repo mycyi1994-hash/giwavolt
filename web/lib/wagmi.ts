@@ -1,7 +1,7 @@
 import { connectorsForWallets } from "@rainbow-me/rainbowkit";
 import { injectedWallet, metaMaskWallet, rainbowWallet, walletConnectWallet } from "@rainbow-me/rainbowkit/wallets";
 import { createConfig, createStorage, http, noopStorage } from "wagmi";
-import { giwaSepolia } from "./chain";
+import { activeChain } from "./chain";
 
 // A WalletConnect project id is a 32-character hex string. Anything else — and
 // in particular the placeholder this file used to fall back to — produces a
@@ -25,12 +25,12 @@ const connectors = connectorsForWallets(
 );
 
 export const wagmiConfig = createConfig({
-  chains: [giwaSepolia],
+  chains: [activeChain],
   connectors,
   // Persist to localStorage so a refresh reconnects instead of prompting again.
   storage: createStorage({ storage: typeof window !== "undefined" ? window.localStorage : noopStorage }),
   ssr: true,
-  transports: { [giwaSepolia.id]: http() },
+  transports: { [activeChain.id]: http() },
 });
 
 /** Whether the WalletConnect options are available in this build. */

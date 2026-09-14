@@ -7,6 +7,7 @@ import DiceHand from "@/components/landing/DiceHand";
 import SoundToggle from "@/components/play/SoundToggle";
 import AmbientBackground from "@/components/AmbientBackground";
 import { useWalletGate } from "@/lib/walletGate";
+import { CHAIN_LABEL } from "@/lib/chain";
 
 export default function Landing() {
   const router = useRouter();
@@ -40,7 +41,7 @@ export default function Landing() {
           {/* left: copy + CTAs */}
           <div className="order-2 md:order-1">
             <div className="mb-3 inline-flex items-center gap-2 border border-line bg-ink-2 px-3 py-1 font-mono text-[10px] tracking-[0.25em] text-cyan clip">
-              <span className="h-1.5 w-1.5 rounded-full bg-cyan animate-flicker" /> ON-CHAIN · GIWA SEPOLIA
+              <span className="h-1.5 w-1.5 rounded-full bg-cyan animate-flicker" /> ON-CHAIN · {CHAIN_LABEL.toUpperCase()}
             </div>
             <h1 className="font-display text-6xl font-black leading-[0.95] tracking-tight sm:text-7xl">
               <span className="block text-txt neon-cyan">BET</span>
@@ -48,7 +49,7 @@ export default function Landing() {
             </h1>
             <p className="mt-4 max-w-md font-sans text-[15px] leading-relaxed text-muted">
               Tap the line. Dodge the skulls. Provably-fair, fully on-chain games settled in{" "}
-              <span className="text-cyan">USDC</span> &amp; <span className="text-lime">KRW</span> on GIWA.
+              <span className="text-cyan">USDC</span> &amp; <span className="text-lime">KRW</span> on {CHAIN_LABEL}.
             </p>
 
             <div className="mt-7 flex flex-wrap gap-3">

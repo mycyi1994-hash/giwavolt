@@ -5,10 +5,10 @@
   "scripts": {
     "compile": "hardhat compile",
     "test": "hardhat test",
-    "deploy:testkrw": "hardhat run scripts/deployTestKRW.ts --network giwaSepolia",
-    "deploy:vault": "hardhat run scripts/deployGameVault.ts --network giwaSepolia",
-    "verify:testkrw": "VERIFY_TARGET=testkrw hardhat run scripts/verify.ts --network giwaSepolia",
-    "verify:vault": "VERIFY_TARGET=vault hardhat run scripts/verify.ts --network giwaSepolia"
+    "deploy:testkrw": "hardhat run scripts/deployTestKRW.ts --network ${NETWORK:-giwaSepolia}",
+    "deploy:vault": "hardhat run scripts/deployGameVault.ts --network ${NETWORK:-giwaSepolia}",
+    "verify:testkrw": "VERIFY_TARGET=testkrw hardhat run scripts/verify.ts --network ${NETWORK:-giwaSepolia}",
+    "verify:vault": "VERIFY_TARGET=vault hardhat run scripts/verify.ts --network ${NETWORK:-giwaSepolia}"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",

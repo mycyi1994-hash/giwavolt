@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { Providers } from "./providers";
+import { CHAIN_LABEL } from "@/lib/chain";
 
 export const metadata: Metadata = {
-  title: "VOLT ⚡ tap-trading on GIWA",
-  description: "Full on-chain tap-trading game on Giwa Sepolia. Tap the grid — the live price line decides.",
+  title: `VOLT ⚡ tap-trading on ${CHAIN_LABEL}`,
+  description: `Full on-chain tap-trading game on ${CHAIN_LABEL}. Tap the grid — the live price line decides.`,
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

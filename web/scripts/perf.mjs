@@ -110,10 +110,25 @@ const EXECUTABLE = CANDIDATES.find((p) => {
 
 // ---------------------------------------------------------------- init scripts
 
+// The chain the mocked wallet claims to be on. It has to agree with whatever
+// lib/chain.ts resolved, or wagmi reports a wrong-network state and ConnectGate
+// never opens — so this table mirrors the registry there, keyed the same way.
+// Node cannot import that TypeScript module, which is the only reason it is
+// repeated rather than shared.
+const MOCK_CHAIN_IDS = {
+  "giwa-sepolia": 91342,
+  "bsc-testnet": 97,
+  "opbnb-testnet": 5611,
+};
+const MOCK_CHAIN_KEY = process.env.NEXT_PUBLIC_CHAIN || "giwa-sepolia";
+if (!(MOCK_CHAIN_KEY in MOCK_CHAIN_IDS)) {
+  throw new Error(`NEXT_PUBLIC_CHAIN="${MOCK_CHAIN_KEY}" is not one of: ${Object.keys(MOCK_CHAIN_IDS).join(", ")}`);
+}
+const MOCK_CHAIN_ID = "0x" + MOCK_CHAIN_IDS[MOCK_CHAIN_KEY].toString(16);
+
 /** Mock injected wallet so wagmi reconnects on mount and ConnectGate opens. */
-const WALLET_INIT = () => {
+const WALLET_INIT = (CHAIN_ID) => {
   const ACCOUNTS = ["0x00000000000000000000000000000000000fea51"];
-  const CHAIN_ID = "0x164ce"; // 91342, Giwa Sepolia
   const events = new Map();
   const provider = {
     isMetaMask: true,
@@ -443,7 +458,7 @@ async function capture(browser, name, setup) {
     return route.abort();
   });
 
-  await context.addInitScript(WALLET_INIT);
+  await context.addInitScript(WALLET_INIT, MOCK_CHAIN_ID);
   if (PROBE !== "none") await context.addInitScript(PROBE_INIT, PROBE);
   await context.addInitScript(PERF_INIT);
 
