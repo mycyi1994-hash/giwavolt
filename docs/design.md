@@ -1,4 +1,19 @@
-# GIWA Slide — design notes
+# Design notes — superseded
+
+> **This document describes an earlier design that was not built.** It specifies
+> a `SlideGame.sol` contract settling native-ETH bets on-chain against an
+> operator-posted price, with the bankroll and per-bet liability held in the
+> contract. None of that exists in this repository.
+>
+> What was actually built: bets settle against an exchange's **published** price
+> bar rather than one this project posts, the balance is an off-chain
+> server ledger, and the only contracts are `TestKRW.sol` (play-money token) and
+> `GameVault.sol` (custody at the edges). The reasoning for that change — why an
+> operator-posted price is not a fair record — is section 1 of
+> [`WHITEPAPER.md`](../WHITEPAPER.md), which is the current design document.
+>
+> Kept for the history of how the pricing grid and the UX were arrived at.
+
 
 A full on-chain **tap-trading** game for Giwa Sepolia (Chain ID `91342`),
 inspired by the HyperSwap "Tap Trading" UX. A live BTC/ETH price line scrolls

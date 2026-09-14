@@ -2,7 +2,7 @@
 
 *A price arcade whose results settle on records the house does not own.*
 
-Grabit · Giwa Sepolia (chainId 91342) · v1, 2026-07
+Grabit · v1, 2026-07
 
 ---
 
@@ -355,12 +355,19 @@ Stating the boundary is more useful than overstating the guarantee.
 
 ## 10. Deployment status
 
-Live on Giwa Sepolia (chainId 91342), source-verified on Blockscout:
+The app targets one EVM chain at a time and the choice is configuration
+(`NEXT_PUBLIC_CHAIN`), not code; nothing in the design above depends on which.
+The reference deployment is **Giwa Sepolia** (chainId 91342), where both
+contracts are live and source-verified on Blockscout:
 
 | Contract | Address |
 | --- | --- |
 | `TestKRW` (tKRW) | [`0x616cb26e3Af3895DEAc5A53f760ECEFaEF4e78bc`](https://sepolia-explorer.giwa.io/address/0x616cb26e3Af3895DEAc5A53f760ECEFaEF4e78bc) |
 | `GameVault` | [`0xc0c7A3DF600263492225d5dACecd5C036EF80B48`](https://sepolia-explorer.giwa.io/address/0xc0c7A3DF600263492225d5dACecd5C036EF80B48) |
+
+Deploying to another chain is a configuration change plus a redeploy of the
+pair above; the addresses are chain-specific and each deployment records its own
+in `contracts/DEPLOYMENTS.md`.
 
 **The public demo at [voltaction.xyz](https://www.voltaction.xyz) is play-money
 only.** Real-money mode — the server-authoritative ledger, and vault deposits and

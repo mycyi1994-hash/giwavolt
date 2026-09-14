@@ -6,6 +6,7 @@ import DiceHand from "@/components/landing/DiceHand";
 import AmbientBackground from "@/components/AmbientBackground";
 import { usePlay } from "@/components/play/PlayProvider";
 import { usdc, krw } from "@/lib/money";
+import { CHAIN_LABEL } from "@/lib/chain";
 
 const CARDS = [
   { href: "/terminal/tap", label: "Tap Trading", desc: "Tap the live price grid. Win stake × multiplier.", icon: LineChart, cls: "text-cyan border-cyan/40", glow: "rgba(0,229,255,.25)" },
@@ -29,7 +30,7 @@ export default function TerminalHome() {
               <span className="text-txt neon-cyan">BET</span> <span className="text-magenta neon-magenta">FUN</span>
             </h1>
             <p className="mt-3 max-w-md font-sans text-[14px] text-muted">
-              Provably-fair, fully on-chain games on GIWA. All play in{" "}
+              Provably-fair, fully on-chain games on {CHAIN_LABEL}. All play in{" "}
               <span className="text-cyan">USDC</span> & <span className="text-lime">KRW</span>.
             </p>
             <div className="mt-4 inline-flex items-center gap-4 border border-line bg-ink-2 px-4 py-2 clip">

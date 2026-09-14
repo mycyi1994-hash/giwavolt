@@ -1,6 +1,6 @@
 import { createPublicClient, createWalletClient, http, parseEther } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { giwaSepolia } from "@/lib/chain";
+import { activeChain, RPC_URL } from "@/lib/chain";
 import { GAMEVAULT_ADDRESS, gameVaultAbi, gameVaultEnabled, voucherDomain, withdrawVoucherTypes } from "@/lib/gamevault";
 import { debit, credit, getBalance } from "@/lib/server/ledger";
 import { reqAddress, reqAmount, readBody, json, err, rateLimit } from "@/lib/server/api";
@@ -37,9 +37,9 @@ export async function POST(req: Request) {
 
   try {
     const account = privateKeyToAccount(key);
-    const transport = http(process.env.NEXT_PUBLIC_GIWA_RPC_URL ?? "https://sepolia-rpc.giwa.io");
-    const publicClient = createPublicClient({ chain: giwaSepolia, transport });
-    const wallet = createWalletClient({ account, chain: giwaSepolia, transport });
+    const transport = http(RPC_URL);
+    const publicClient = createPublicClient({ chain: activeChain, transport });
+    const wallet = createWalletClient({ account, chain: activeChain, transport });
     const vault = GAMEVAULT_ADDRESS as `0x${string}`;
 
     // New cumulative = on-chain withdrawn (source of truth) + this amount.
@@ -47,7 +47,7 @@ export async function POST(req: Request) {
     const cumulative = base + parseEther(String(amount));
 
     const sig = await account.signTypedData({
-      domain: voucherDomain(giwaSepolia.id, vault),
+      domain: voucherDomain(activeChain.id, vault),
       types: withdrawVoucherTypes,
       primaryType: "Withdraw",
       message: { user: address as `0x${string}`, cumulative },

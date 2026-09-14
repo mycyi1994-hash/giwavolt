@@ -2,7 +2,7 @@ import { network, run } from "hardhat";
 import { readFileSync } from "fs";
 import { join } from "path";
 
-// Verify the deployed contracts' source on Giwa's Blockscout.
+// Verify the deployed contracts' source on the target chain's explorer.
 //
 // Deploying is only half of it: until the source is verified the explorer shows
 // bytecode, so a player cannot read the custody contract they are depositing
@@ -52,7 +52,7 @@ function resolve(which: string): Target {
 
 async function main() {
   const which = process.argv[2] ?? process.env.VERIFY_TARGET;
-  if (!which) throw new Error('Usage: hardhat run scripts/verify.ts --network giwaSepolia -- <testkrw|vault>');
+  if (!which) throw new Error('Usage: hardhat run scripts/verify.ts --network <network> -- <testkrw|vault>');
   const t = resolve(which);
   console.log(`Verifying ${t.label} at ${t.address} on ${network.name}`);
   if (t.args.length) console.log("  constructor args:", t.args);

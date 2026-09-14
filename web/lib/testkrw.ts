@@ -1,4 +1,4 @@
-// TestKRW (tKRW) — faucet-funded play-money token on Giwa Sepolia.
+// TestKRW (tKRW) — faucet-funded play-money token on the configured chain.
 // No real value; lets people try the games without real testnet USDC/ETH.
 
 export const TESTKRW_ADDRESS = (process.env.NEXT_PUBLIC_TESTKRW_ADDRESS ?? "").trim() as
