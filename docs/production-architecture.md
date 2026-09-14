@@ -1,6 +1,6 @@
 # Production architecture (testnet launch)
 
-Real, deployable build on **Giwa Sepolia** that people can use. No-popup play,
+Real, deployable build on an **EVM testnet** that people can use. No-popup play,
 on-chain custody, server-authoritative (anti-cheat) settlement.
 
 ## Decisions
@@ -35,7 +35,7 @@ Backend (Vercel API + Supabase)
    ├─ deposit watcher: GameVault `Deposited` events → credit balance
    └─ withdraw signer: operator key signs EIP-712 cumulative voucher
         │
-Giwa Sepolia: TestKRW (tKRW) + GameVault
+Target chain: TestKRW (tKRW) + GameVault
 ```
 
 ## GameVault (done — `contracts/src/GameVault.sol`)

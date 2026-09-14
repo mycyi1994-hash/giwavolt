@@ -3,7 +3,7 @@ pragma solidity 0.8.24;
 
 /// @title TestKRW (tKRW) — play-money ERC-20 for the VOLT testnet build
 /// @notice A faucet-funded test token denominated like KRW. There is no real
-///         value here; it exists so people can try the games on Giwa Sepolia
+///         value here; it exists so people can try the games on a testnet
 ///         without needing real testnet USDC. Anyone can pull a fixed drip from
 ///         the public `faucet()` (rate-limited); the server-side faucet uses the
 ///         owner's `mint()` to push tokens (plus a little gas ETH) to wallets

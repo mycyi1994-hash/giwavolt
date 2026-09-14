@@ -24,10 +24,10 @@ cd contracts            # .env has PRIVATE_KEY (your test wallet)
 npm run compile
 # operator defaults to the deployer; seed some bankroll so winnings can be paid
 BANKROLL_TKRW=10000000 npm run deploy:vault
-# → prints "GameVault: 0x..." and writes deployments/gameVault.giwaSepolia.json
+# → prints "GameVault: 0x..." and writes deployments/gameVault.<network>.json
 ```
 
-(`TESTKRW_ADDRESS` is read from `deployments/testKRW.giwaSepolia.json`
+(`TESTKRW_ADDRESS` is read from `deployments/testKRW.<network>.json`
 automatically, or set it in the env.)
 
 ### 2. Configure the web app

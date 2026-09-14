@@ -74,8 +74,15 @@ it exists to prevent: an enabled button over a ledger that has no database.
 Recommended:
 ```
 NEXT_PUBLIC_WC_PROJECT_ID    = <from step 1>
-NEXT_PUBLIC_GIWA_RPC_URL     = https://sepolia-rpc.giwa.io
+NEXT_PUBLIC_CHAIN            = giwa-sepolia | bsc-testnet | opbnb-testnet
+NEXT_PUBLIC_RPC_URL          = <private node, if the public one is rate-limited>
 ```
+`NEXT_PUBLIC_CHAIN` may be left unset, which means `giwa-sepolia`. What it must
+not be is a value the app does not know — that is refused at startup rather than
+absorbed into the default, because the chain id goes into the withdrawal
+voucher's EIP-712 domain and a silent fallback makes the vault reject every
+withdrawal as `bad sig`. It must also name the same chain the contracts were
+deployed to.
 When the vault is deployed:
 ```
 NEXT_PUBLIC_GAMEVAULT_ADDRESS = 0x...
@@ -87,7 +94,8 @@ OPERATOR_PRIVATE_KEY          = 0x...   (server-only)
 ## 4. Deploy & test
 
 - Click **Deploy**. You'll get a `https://<project>.vercel.app` URL.
-- Open it → connect wallet on Giwa Sepolia → REAL → **GET TEST KRW** → balance
+- Open it → connect the wallet on whatever `NEXT_PUBLIC_CHAIN` names → REAL →
+  **GET TEST KRW** → balance
   should appear (served from Postgres).
 - Check Supabase → Table Editor → `accounts` to see live rows.
 

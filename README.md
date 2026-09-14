@@ -1,4 +1,4 @@
-# VOLT ⚡ — crypto arcade (Giwa Sepolia)
+# VOLT ⚡ — crypto arcade
 
 > ### What the public demo actually runs
 >
@@ -8,7 +8,8 @@
 >
 > REAL mode — the server-authoritative ledger, and deposits and withdrawals
 > through GameVault — is written and tested, and both contracts are deployed and
-> source-verified on Giwa Sepolia. It is switched **off** in that deployment:
+> source-verified on the reference chain, Giwa Sepolia. It is switched **off** in
+> that deployment:
 > `NEXT_PUBLIC_REAL_MODE`, `NEXT_PUBLIC_GAMEVAULT_ADDRESS` and
 > `OPERATOR_PRIVATE_KEY` are unset, so the REAL toggle renders disabled, and the
 > vault's bankroll has never been funded.
@@ -228,20 +229,52 @@ cp .env.local.example .env.local   # DATABASE_URL + token/keys for REAL mode
 npm run dev                        # http://localhost:3000
 ```
 
+## Which chain
+
+Nothing in the design depends on a particular chain — the app targets one EVM
+network at a time and the choice is configuration, not code:
+
+| | Setting | Values |
+| --- | --- | --- |
+| App | `NEXT_PUBLIC_CHAIN` | `giwa-sepolia` (default) · `bsc-testnet` · `opbnb-testnet` |
+| Contracts | `NETWORK` | `giwaSepolia` (default) · `bscTestnet` · `opbnbTestnet` |
+
+The two have to name the same chain. The chain id goes into the withdrawal
+voucher's EIP-712 domain, so disagreeing does not fail loudly — the vault
+rejects every withdrawal as `bad sig` with nothing on-chain to explain why. An
+unrecognised value is refused at startup rather than falling back to the
+default, for the same reason.
+
+Giwa Sepolia is the reference deployment because it is where the verified pair
+in [`contracts/DEPLOYMENTS.md`](contracts/DEPLOYMENTS.md) actually lives. Adding
+a chain means a row in `web/lib/chain.ts`, a network in
+`contracts/hardhat.config.ts`, and deploying the pair — nothing else names a
+network.
+
 ## Deploy contracts
 
 ```bash
 cd contracts                        # .env: PRIVATE_KEY=0x... (funded test wallet)
 npm install && npm test
 npm run deploy:testkrw              # tKRW token
-npm run verify:testkrw              # publish source to Giwa's Blockscout
+npm run verify:testkrw              # publish source to the chain's explorer
 BANKROLL_TKRW=10000000 npm run deploy:vault
 npm run verify:vault
 ```
 
+Add `NETWORK=` to target something other than the default:
+
+```bash
+NETWORK=bscTestnet npm run deploy:testkrw
+NETWORK=bscTestnet npm run verify:testkrw   # needs BSCSCAN_API_KEY
+```
+
 Verifying is a separate step and not an optional one: until the source is
 published, the explorer shows bytecode, so a player cannot read the custody
-contract they are depositing into. Live addresses and their verification status
-are in [`contracts/DEPLOYMENTS.md`](contracts/DEPLOYMENTS.md).
+contract they are depositing into. Blockscout ignores the API key; the
+BscScan-family explorers do not, and a missing key comes back as a rejection
+that reads like a compiler-settings mismatch. Live addresses and their
+verification status are in
+[`contracts/DEPLOYMENTS.md`](contracts/DEPLOYMENTS.md).
 
 Full guides in [`docs/`](docs) — start with `production-architecture.md`.

@@ -1,15 +1,24 @@
-# Publish contract source to Giwa's Blockscout, from a button in the browser.
+# Publish contract source to the target chain's explorer, from a button in the
+# browser.
 #
 # Verification uploads source — it does not sign anything — so this needs no
-# private key and no secrets. That is the whole reason it can live in CI:
-# deploying would need a funded key, verifying does not.
+# private key. That is the whole reason it can live in CI: deploying would need
+# a funded key, verifying does not. Blockscout (Giwa) needs nothing at all; the
+# BscScan-family explorers want an API key, which is a read credential, not a
+# signing one. Put it in the BSCSCAN_API_KEY repository secret.
 #
-# Run it from the Actions tab: "Verify contracts on Blockscout" → Run workflow.
-name: Verify contracts on Blockscout
+# Run it from the Actions tab: "Verify contracts" → Run workflow.
+name: Verify contracts
 
 on:
   workflow_dispatch:
     inputs:
+      network:
+        description: "Chain to verify on"
+        required: true
+        default: "giwaSepolia"
+        type: choice
+        options: [giwaSepolia, bscTestnet, opbnbTestnet]
       testkrw:
         description: "TestKRW address (blank to skip)"
         required: false
@@ -65,6 +74,8 @@ jobs:
         if: inputs.testkrw != ''
         working-directory: contracts
         env:
+          NETWORK: ${{ inputs.network }}
+          BSCSCAN_API_KEY: ${{ secrets.BSCSCAN_API_KEY }}
           TESTKRW_ADDRESS: ${{ inputs.testkrw }}
           SOLC_EVM_VERSION: ${{ inputs.evm }}
           SOLC_OPTIMIZER: ${{ inputs.optimizer }}
@@ -75,6 +86,8 @@ jobs:
         if: inputs.vault != ''
         working-directory: contracts
         env:
+          NETWORK: ${{ inputs.network }}
+          BSCSCAN_API_KEY: ${{ secrets.BSCSCAN_API_KEY }}
           GAMEVAULT_ADDRESS: ${{ inputs.vault }}
           TESTKRW_ADDRESS: ${{ inputs.testkrw }}
           OPERATOR_ADDRESS: ${{ inputs.operator }}
@@ -85,6 +98,15 @@ jobs:
 
       - name: Where to look
         if: always()
+        env:
+          NETWORK: ${{ inputs.network }}
         run: |
-          echo "Explorer: https://sepolia-explorer.giwa.io/address/${{ inputs.testkrw }}"
+          case "$NETWORK" in
+            bscTestnet)   BASE=https://testnet.bscscan.com ;;
+            opbnbTestnet) BASE=https://testnet.opbnbscan.com ;;
+            *)            BASE=https://sepolia-explorer.giwa.io ;;
+          esac
+          for addr in "${{ inputs.testkrw }}" "${{ inputs.vault }}"; do
+            [ -n "$addr" ] && echo "Explorer: $BASE/address/$addr"
+          done
           echo "Verified contracts show source and Read/Write tabs instead of raw bytecode."

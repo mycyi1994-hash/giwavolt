@@ -1,6 +1,6 @@
 # Test KRW (tKRW) — off-chain play balance + faucet/withdraw
 
-Lets people play **every game** in tKRW on Giwa Sepolia with **no signatures**.
+Lets people play **every game** in tKRW on the configured chain with **no signatures**.
 The game balance is an off-chain ledger keyed by the connected wallet; faucet
 credits it, games settle against it instantly, and withdraw turns it back into
 real on-chain tKRW.
